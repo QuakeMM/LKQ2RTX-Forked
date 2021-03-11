@@ -443,7 +443,11 @@ void CL_MuzzleFlash(void)
 	// Q2RTX
     }
 
-	if (cls.ref_type == REF_TYPE_VKPT)
+	//if (cls.ref_type == REF_TYPE_VKPT)
+    // SavvyKMS muzzleflash - re-added by SGC-Puffy
+
+    if (!vid_muzzleflash->integer)
+
 	{
 		// don't add muzzle flashes in RTX mode
 		DL_RADIUS(0.f);
