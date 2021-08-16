@@ -36,7 +36,7 @@ static vec3_t freecam_viewangles = { 0.f };
 static float freecam_zoom = 1.f;
 static qboolean freecam_keystate[6] = { 0 };
 static qboolean freecam_active = qfalse;
-static int freecam_player_model = 0;
+int freecam_player_model = 0;
 
 extern float autosens_x;
 extern float autosens_y;
@@ -51,6 +51,8 @@ extern cvar_t *cvar_pt_aperture;
 extern cvar_t *cvar_pt_focus;
 extern cvar_t *cvar_pt_freecam;
 
+// WatIsDeze: widcam.
+extern cvar_t* cvar_pt_widcam;
 
 void vkpt_freecam_reset()
 {
@@ -66,7 +68,7 @@ static void vkpt_freecam_mousemove()
 	int dx, dy;
 	float mx, my;
 	float speed;
-
+	
 	const inputAPI_t* api = IN_GetAPI();
 
 	if (!api->GetMotion)
@@ -74,6 +76,8 @@ static void vkpt_freecam_mousemove()
 
 	if (!api->GetMotion(&dx, &dy))
 		return;
+	//SDL_SetRelativeMouseMode(SDL_TRUE);
+	//SDL_GetRelativeMouseState(&dx, &dy);
 
 	mx = dx;
 	my = dy;
@@ -119,10 +123,19 @@ static void vkpt_freecam_mousemove()
 
 void vkpt_freecam_update(float frame_time)
 {
-	if (cl_paused->integer != 2 || !sv_paused->integer || !cvar_pt_freecam->integer)
-	{
-		vkpt_freecam_reset();
-		return;
+	// WatIsDeze: widcam.
+	if (!cvar_pt_widcam->integer) {
+		if (cl_paused->integer != 2 || !sv_paused->integer || !cvar_pt_freecam->integer)
+		{
+			vkpt_freecam_reset();
+			return;
+		}
+	} else {
+		//Cvar_Set("cl_paused", "2");
+		//cls.key_dest = KEY_MENU;
+
+		// Very cheasy hack ofc.
+		VectorCopy(vkpt_refdef.fd->viewangles, freecam_viewangles);
 	}
 
 	if (!freecam_active)
@@ -184,8 +197,11 @@ void vkpt_freecam_update(float frame_time)
 
 qboolean R_InterceptKey_RTX(unsigned key, qboolean down)
 {
-	if (cl_paused->integer != 2 || !sv_paused->integer)
-		return qfalse;
+	// WatIsDeze: widcam.
+	if (!cvar_pt_widcam->integer) {
+		if (cl_paused->integer != 2 || !sv_paused->integer)
+			return qfalse;
+	}
 
 	const char* kb = Key_GetBindingForKey(key);
 	if (kb && strstr(kb, "pause"))

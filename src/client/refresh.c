@@ -28,6 +28,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 // Console variables that we need to access from this module
 cvar_t      *vid_rtx;
+cvar_t      *vid_muzzleflash;
 cvar_t      *vid_geometry;
 cvar_t      *vid_modelist;
 cvar_t      *vid_fullscreen;
@@ -317,6 +318,7 @@ void CL_InitRefresh(void)
 #endif
 		CVAR_REFRESH | CVAR_ARCHIVE);
 
+    vid_muzzleflash = Cvar_Get("vid_muzzleflash", "0", CVAR_ARCHIVE);
     vid_fullscreen = Cvar_Get("vid_fullscreen", "0", CVAR_ARCHIVE);
     _vid_fullscreen = Cvar_Get("_vid_fullscreen", "1", CVAR_ARCHIVE);
     vid_modelist = Cvar_Get("vid_modelist", modelist, 0);

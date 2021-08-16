@@ -738,6 +738,7 @@ Sends a disconnect message to the server
 This is also called on Com_Error, so it shouldn't cause any errors
 =====================
 */
+qboolean snd_is_underwater; // From SacikPL
 void CL_Disconnect(error_type_t type)
 {
     if (!cls.state) {
@@ -789,6 +790,7 @@ void CL_Disconnect(error_type_t type)
     CL_GTV_Suspend();
 
     cls.state = ca_disconnected;
+    snd_is_underwater = qfalse; // From SacikPL
     cls.userinfo_modified = 0;
 
     if (type == ERR_DISCONNECT) {
@@ -1758,7 +1760,10 @@ Called after all downloads are done. Not used for demos.
 void CL_Begin(void)
 {
 #if USE_REF == REF_GL
-    if (!Q_stricmp(cl.gamedir, "gloom")) {
+    //Savvyy edit: original q2pro logic to circumvent quake 2 gloom mod's built-in OpenGL/ref_gl validation logic
+    //gloom's gameplay is heavily affected by lighting, especially for map balance
+    //updated logic as q2rtx project would fail to load an appropriate gloom game DLL, as it would crash upon initialization here when vid_rtx = 1
+    if (vid_rtx != NULL && vid_rtx->integer == 0 && gl_modulate_world != NULL && gl_modulate_entities != NULL && gl_brightness != NULL && !Q_stricmp(cl.gamedir, "gloom")) {
         // cheat protect our custom modulate cvars
         gl_modulate_world->flags |= CVAR_CHEAT;
         gl_modulate_entities->flags |= CVAR_CHEAT;
@@ -3111,7 +3116,8 @@ void CL_CheckForPause(void)
         if (cl_paused->integer == 0 && cl_autopause->integer) {
             Cvar_Set("cl_paused", "1");
         }
-    } else if (cl_paused->integer == 1) {
+    }
+    else if (cl_paused->integer == 1) {
         // only resume after automatic pause
         Cvar_Set("cl_paused", "0");
     }
@@ -3119,12 +3125,13 @@ void CL_CheckForPause(void)
     // hack for demo playback pause/unpause
     if (cls.demo.playback) {
         // don't pause when running timedemo!
-        if (cl_paused->integer && !com_timedemo->integer) {
+        if (cl_paused->integer && !com_timedemo->integer && !CL_IsMenuDemoPlaying()) {
             if (!sv_paused->integer) {
                 Cvar_Set("sv_paused", "1");
                 IN_Activate();
             }
-        } else {
+        }
+        else {
             if (sv_paused->integer) {
                 Cvar_Set("sv_paused", "0");
                 IN_Activate();

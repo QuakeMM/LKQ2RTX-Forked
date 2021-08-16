@@ -245,6 +245,7 @@ bool pt_logic_beam_intersection(int beam_index,
 
 		if(hit_below_0.x) t.x = max(t.x, t_sphere.x);
 		if(hit_below_0.y) t.y = min(t.y, t_sphere.y);
+
 	}
 
 	bvec2 hit_above_end = greaterThan(hit_z, vec2(beam_length));
@@ -257,6 +258,7 @@ bool pt_logic_beam_intersection(int beam_index,
 		if(hit_above_end.x) t.x = max(t.x, t_sphere.x);
 		if(hit_above_end.y) t.y = min(t.y, t_sphere.y);
 	}
+
 
 	if((t.x >= rayTmax) || (t.y < rayTmin))
 		return false;

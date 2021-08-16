@@ -109,6 +109,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define SHADER_MAX_ENTITIES                  1024
 #define SHADER_MAX_BSP_ENTITIES              128
 #define MAX_LIGHT_SOURCES                    32
+//MAX_DLIGHTS + MAX_ENTLIGHTS
+#define MAX_ENTLIGHTS                        32
 #define MAX_LIGHT_STYLES                     64
 
 #define AS_FLAG_OPAQUE          (1 << 0)
@@ -130,6 +132,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define SBT_RMISS_SHADOW 2
 #define SBT_RCHIT_OPAQUE 3
 #define SBT_RCHIT_EMPTY 4
+
 #define SBT_RAHIT_MASKED 5
 #define SBT_RAHIT_MASKED_SHADOW 6
 #define SBT_RAHIT_PARTICLE 7
@@ -140,12 +143,15 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define SBT_RAHIT_SPRITE_SHADOW 12
 #define SBT_RINT_BEAM 13
 #define SBT_ENTRIES_PER_PIPELINE 14
+
 // vkpt_pt_create_pipelines() relies on all 'transparency' SBT entries coming after SBT_FIRST_TRANSPARENCY
 #define SBT_FIRST_TRANSPARENCY SBT_RAHIT_PARTICLE
 
 // SBT indices, for primary rays
 #define SBTO_OPAQUE     (SBT_RCHIT_OPAQUE - SBT_RCHIT_OPAQUE)
+
 #define SBTO_MASKED     (SBT_RAHIT_MASKED - SBT_RCHIT_OPAQUE)
+
 #define SBTO_PARTICLE   (SBT_RAHIT_PARTICLE - SBT_RCHIT_OPAQUE)
 #define SBTO_EXPLOSION  (SBT_RAHIT_EXPLOSION - SBT_RCHIT_OPAQUE)
 #define SBTO_SPRITE     (SBT_RAHIT_SPRITE - SBT_RCHIT_OPAQUE)
@@ -154,5 +160,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #ifndef M_PI
 #define M_PI 3.1415926535897932384626433832795
 #endif
+
 
 #endif /*_CONSTANTS_H_*/

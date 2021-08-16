@@ -272,7 +272,9 @@ typedef struct QVK_s {
 
     VkSampler                   tex_sampler, 
                                 tex_sampler_nearest,
+
                                 tex_sampler_nearest_mipmap_aniso,
+
                                 tex_sampler_linear_clamp;
 
 	float                       sintab[256];

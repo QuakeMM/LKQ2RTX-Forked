@@ -76,7 +76,9 @@ static uint8_t descriptor_set_dirty_flags[MAX_FRAMES_IN_FLIGHT] = { 0 }; // init
 static const float megabyte = 1048576.0f;
 
 extern cvar_t* cvar_pt_nearest;
+
 extern cvar_t* cvar_pt_surface_lights_threshold;
+
 
 void vkpt_textures_prefetch()
 {
@@ -1222,7 +1224,9 @@ vkpt_textures_initialize()
 	_VK(vkCreateSampler(qvk.device, &sampler_nearest_info, NULL, &qvk.tex_sampler_nearest));
 	ATTACH_LABEL_VARIABLE(qvk.tex_sampler_nearest, SAMPLER);
 
+
 	VkSamplerCreateInfo sampler_nearest_mipmap_aniso_info = {
+
 		.sType                   = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
 		.magFilter               = VK_FILTER_NEAREST,
 		.minFilter               = VK_FILTER_LINEAR,
@@ -1239,6 +1243,7 @@ vkpt_textures_initialize()
 	};
 	_VK(vkCreateSampler(qvk.device, &sampler_nearest_mipmap_aniso_info, NULL, &qvk.tex_sampler_nearest_mipmap_aniso));
 	ATTACH_LABEL_VARIABLE(qvk.tex_sampler_nearest_mipmap_aniso, SAMPLER);
+
 
 	VkSamplerCreateInfo sampler_linear_clamp_info = {
 		.sType                   = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,

@@ -267,7 +267,10 @@ trace_ray(Ray ray, bool cull_back_faces, int instance_mask, bool skip_procedural
 	if (cull_back_faces)
 		rayFlags |= gl_RayFlagsCullBackFacingTrianglesEXT;
 	if (skip_procedural)
+
+
 		rayFlags |= gl_RayFlagsSkipProceduralPrimitives;
+
 
 	ray_payload_brdf.barycentric = vec2(0);
 	ray_payload_brdf.instance_prim = 0;
@@ -318,6 +321,7 @@ trace_ray(Ray ray, bool cull_back_faces, int instance_mask, bool skip_procedural
 		{
 			switch(sbtOffset)
 			{
+
 			case SBTO_MASKED: // masked materials
 				if (pt_logic_masked(primitiveID, instanceCustomIndex, bary))
 					rayQueryConfirmIntersectionEXT(rayQuery);
@@ -433,7 +437,6 @@ trace_caustic_ray(Ray ray, int surface_medium)
     ray_payload_brdf.closest_max_transparent_distance = 0;
 	ray_payload_brdf.farthest_transparent_distance = 0;
 	ray_payload_brdf.farthest_transparent_depth = 0;
-
 
 	uint rayFlags = gl_RayFlagsCullBackFacingTrianglesEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipProceduralPrimitives;
 	uint instance_mask = AS_FLAG_TRANSPARENT;
