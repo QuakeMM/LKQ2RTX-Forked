@@ -74,6 +74,8 @@ static uint8_t descriptor_set_dirty_flags[MAX_FRAMES_IN_FLIGHT] = { 0 }; // init
 
 static const float megabyte = 1048576.0f;
 
+extern cvar_t* cvar_pt_nearest;
+
 void vkpt_textures_prefetch()
 {
     byte* buffer = NULL;
@@ -116,6 +118,12 @@ void vkpt_textures_prefetch()
 	}
     // Com_Printf("Loaded '%s'\n", filename);
     FS_FreeFile(buffer);
+}
+
+void vkpt_invalidate_texture_descriptors()
+{
+	for (int index = 0; index < MAX_FRAMES_IN_FLIGHT; index++)
+		descriptor_set_dirty_flags[index] = 1;
 }
 
 static void textures_destroy_unused_set(uint32_t set_index)
@@ -660,7 +668,7 @@ IMG_Unload_RTX(image_t *image)
 	tex_images[index] = VK_NULL_HANDLE;
 	tex_image_views[index] = VK_NULL_HANDLE;
 
-	memset(descriptor_set_dirty_flags, 0xff, sizeof(descriptor_set_dirty_flags));
+	vkpt_invalidate_texture_descriptors();
 	}
 }
 
@@ -822,7 +830,7 @@ void destroy_invalid_texture()
 VkResult
 vkpt_textures_initialize()
 {
-	memset(descriptor_set_dirty_flags, 0xff, sizeof(descriptor_set_dirty_flags));
+	vkpt_invalidate_texture_descriptors();
 	memset(&texture_system, 0, sizeof(texture_system));
 
 	tex_device_memory_allocator = create_device_memory_allocator(qvk.device);
@@ -861,6 +869,25 @@ vkpt_textures_initialize()
 	};
 	_VK(vkCreateSampler(qvk.device, &sampler_nearest_info, NULL, &qvk.tex_sampler_nearest));
 	ATTACH_LABEL_VARIABLE(qvk.tex_sampler_nearest, SAMPLER);
+
+		VkSamplerCreateInfo sampler_nearest_mipmap_aniso_info = {
+		.sType                   = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+		.magFilter               = VK_FILTER_NEAREST,
+		.minFilter               = VK_FILTER_LINEAR,
+		.addressModeU            = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.addressModeV            = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.addressModeW            = VK_SAMPLER_ADDRESS_MODE_REPEAT,
+		.anisotropyEnable        = VK_TRUE,
+		.maxAnisotropy           = 16,
+		.borderColor             = VK_BORDER_COLOR_INT_OPAQUE_BLACK,
+		.unnormalizedCoordinates = VK_FALSE,
+		.mipmapMode              = VK_SAMPLER_MIPMAP_MODE_LINEAR,
+		.minLod                  = 0.0f,
+		.maxLod                  = 128.0f,
+	};
+	_VK(vkCreateSampler(qvk.device, &sampler_nearest_mipmap_aniso_info, NULL, &qvk.tex_sampler_nearest_mipmap_aniso));
+	ATTACH_LABEL_VARIABLE(qvk.tex_sampler_nearest_mipmap_aniso, SAMPLER);
+
 
 	VkSamplerCreateInfo sampler_linear_clamp_info = {
 		.sType                   = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
@@ -1055,6 +1082,7 @@ vkpt_textures_destroy()
 	vkDestroyImageView(qvk.device, imv_blue_noise,      NULL);
 	vkDestroySampler  (qvk.device, qvk.tex_sampler,         NULL);
 	vkDestroySampler  (qvk.device, qvk.tex_sampler_nearest, NULL);
+	vkDestroySampler  (qvk.device, qvk.tex_sampler_nearest_mipmap_aniso, NULL);
 	vkDestroySampler  (qvk.device, qvk.tex_sampler_linear_clamp, NULL);
 
 	if(imv_envmap != VK_NULL_HANDLE) {
@@ -1345,7 +1373,7 @@ vkpt_textures_end_registration()
 	unused_resources->buffers[unused_index] = buf_img_upload.buffer;
 	unused_resources->buffer_memory[unused_index] = buf_img_upload.memory;
 
-	memset(descriptor_set_dirty_flags, 0xff, sizeof(descriptor_set_dirty_flags));
+	vkpt_invalidate_texture_descriptors();
 
 	size_t texture_memory_allocated, texture_memory_used;
 	get_device_malloc_stats(tex_device_memory_allocator, &texture_memory_allocated, &texture_memory_used);
@@ -1374,6 +1402,10 @@ void vkpt_textures_update_descriptor_set()
 			sampler = qvk.tex_sampler_nearest;
 		else if (q_img->type == IT_SPRITE)
 			sampler = qvk.tex_sampler_linear_clamp;
+		else if (cvar_pt_nearest->integer == 1)
+			sampler = qvk.tex_sampler_nearest_mipmap_aniso;
+		else if (cvar_pt_nearest->integer >= 2)
+			sampler = qvk.tex_sampler_nearest;
 
 		VkDescriptorImageInfo img_info = {
 			.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,

@@ -1,4 +1,12 @@
-cmake_minimum_required (VERSION 3.8)
+cmake_minimum_required (VERSION 3.9)
+cmake_policy(SET CMP0069 NEW)
+
+if (UNIX)
+	FIND_PACKAGE(OpenAL)
+	if (NOT OPENAL_INCLUDE_DIR)
+		message(FATAL_ERROR "Can't find OpenAL. Please install the libopenal-dev package.")
+	endif()
+endif()
 
 SET(SRC_BASEQ2
 	baseq2/g_ai.c
@@ -278,6 +286,7 @@ SET(SRC_VKPT
 	refresh/vkpt/buddy_allocator.c
 	refresh/vkpt/device_memory_allocator.c
 	refresh/vkpt/god_rays.c
+	refresh/vkpt/conversion.c
 )
 
 SET(HEADERS_VKPT
@@ -288,6 +297,7 @@ SET(HEADERS_VKPT
 	refresh/vkpt/material.h
 	refresh/vkpt/physical_sky.h
 	refresh/vkpt/precomputed_sky.h
+	refresh/vkpt/conversion.h
 )
 
 set(SRC_SHADERS
@@ -329,6 +339,7 @@ set(SRC_RT_SHADERS
 	refresh/vkpt/shader/path_tracer_particle.rahit
 	refresh/vkpt/shader/path_tracer_sprite.rahit
 	refresh/vkpt/shader/path_tracer_beam.rahit
+	refresh/vkpt/shader/path_tracer_beam.rint
 	refresh/vkpt/shader/path_tracer_explosion.rahit
 	refresh/vkpt/shader/path_tracer_shadow.rmiss
 	refresh/vkpt/shader/reflect_refract.rgen
@@ -369,7 +380,7 @@ IF(WIN32)
 	ADD_DEFINITIONS(-D_CRT_SECURE_NO_WARNINGS)
 ENDIF()
 
-ADD_LIBRARY(gamex86 SHARED ${SRC_BASEQ2} ${HEADERS_BASEQ2} ${SRC_SHARED})
+ADD_LIBRARY(baseq2 SHARED ${SRC_BASEQ2} ${HEADERS_BASEQ2} ${SRC_SHARED})
 IF(WIN32)
 ADD_EXECUTABLE(client WIN32 
 	${SRC_CLIENT} ${HEADERS_CLIENT} 
@@ -463,8 +474,8 @@ SOURCE_GROUP("windows\\headers" FILES ${HEADERS_WINDOWS})
 IF (WIN32)
 	TARGET_INCLUDE_DIRECTORIES(client PRIVATE ../VC/inc)
 	TARGET_INCLUDE_DIRECTORIES(server PRIVATE ../VC/inc)
-	TARGET_INCLUDE_DIRECTORIES(gamex86 PRIVATE ../VC/inc)
-	TARGET_SOURCES(gamex86 PRIVATE windows/res/baseq2.rc)
+	TARGET_INCLUDE_DIRECTORIES(baseq2 PRIVATE ../VC/inc)
+	TARGET_SOURCES(baseq2 PRIVATE windows/res/baseq2.rc)
 
 	TARGET_LINK_LIBRARIES(client winmm ws2_32)
 	TARGET_LINK_LIBRARIES(server winmm ws2_32)
@@ -475,10 +486,10 @@ IF (WIN32)
 	# macro redefinition, deprecation
 	target_compile_options(client PRIVATE /wd4005 /wd4996)
 	target_compile_options(server PRIVATE /wd4005 /wd4996)
-	target_compile_options(gamex86 PRIVATE /wd4005 /wd4996)
+	target_compile_options(baseq2 PRIVATE /wd4005 /wd4996)
 ENDIF()
 
-TARGET_INCLUDE_DIRECTORIES(gamex86 PRIVATE ../inc)
+TARGET_INCLUDE_DIRECTORIES(baseq2 PRIVATE ../inc)
 
 TARGET_INCLUDE_DIRECTORIES(client PRIVATE ../inc)
 TARGET_INCLUDE_DIRECTORIES(client PRIVATE "${ZLIB_INCLUDE_DIRS}")
@@ -496,7 +507,7 @@ endif()
 
 SET_TARGET_PROPERTIES(client
     PROPERTIES
-    OUTPUT_NAME "q2rtx"
+    OUTPUT_NAME "lkq2rtx"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_SOURCE_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}"
@@ -507,7 +518,7 @@ SET_TARGET_PROPERTIES(client
 
 SET_TARGET_PROPERTIES(server
     PROPERTIES
-    OUTPUT_NAME "q2rtxded"
+    OUTPUT_NAME "lkq2rtxded"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_SOURCE_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}"
@@ -518,7 +529,7 @@ SET_TARGET_PROPERTIES(server
 
 # specify both LIBRARY and RUNTIME because one works only on Windows and another works only on Linux
 
-SET_TARGET_PROPERTIES(gamex86
+SET_TARGET_PROPERTIES(baseq2
     PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/baseq2"
     LIBRARY_OUTPUT_DIRECTORY_DEBUG "${CMAKE_SOURCE_DIR}/baseq2"
@@ -535,11 +546,19 @@ SET_TARGET_PROPERTIES(gamex86
 )
 
 IF(IS_64_BIT)
-	SET_TARGET_PROPERTIES(gamex86
-		PROPERTIES
-		LIBRARY_OUTPUT_NAME "gamex86_64"
-		RUNTIME_OUTPUT_NAME "gamex86_64"
-	)
+	IF(CMAKE_SYSTEM_PROCESSOR STREQUAL "aarch64")
+		SET_TARGET_PROPERTIES(baseq2
+			PROPERTIES
+			LIBRARY_OUTPUT_NAME "gameaarch64"
+			RUNTIME_OUTPUT_NAME "gameaarch64"
+		)
+	ELSE()
+		SET_TARGET_PROPERTIES(baseq2
+			PROPERTIES
+			LIBRARY_OUTPUT_NAME "gamex86_64"
+			RUNTIME_OUTPUT_NAME "gamex86_64"
+		)
+	ENDIF()
 ENDIF()
 
 IF(CONFIG_LINUX_PACKAGING_SUPPORT)
@@ -552,7 +571,7 @@ IF(CONFIG_LINUX_PACKAGING_SUPPORT)
         SCRIPT "${CMAKE_SOURCE_DIR}/setup/package_media.cmake"
         SCRIPT "${CMAKE_SOURCE_DIR}/setup/package_shaders.cmake"
         COMPONENT shareware)
-    INSTALL(TARGETS gamex86 DESTINATION share/quake2rtx/baseq2 COMPONENT shareware)
+    INSTALL(TARGETS baseq2 DESTINATION share/quake2rtx/baseq2 COMPONENT shareware)
 
     # Package data files, including the shareware pak0 for demo levels
     set (SHAREWARE_DATA_FILES_LIST
@@ -563,13 +582,13 @@ IF(CONFIG_LINUX_PACKAGING_SUPPORT)
     )
     INSTALL(FILES
         ${SHAREWARE_DATA_FILES_LIST}
-        DESTINATION share/quake2rtx/baseq2
+        DESTINATION share/lkq2rtx/baseq2
         COMPONENT shareware)
 
     # Package shareware player model
     INSTALL(DIRECTORY
         "${CMAKE_SOURCE_DIR}/baseq2/shareware/players"
-        DESTINATION share/quake2rtx/baseq2
+        DESTINATION share/lkq2rtx/baseq2
         COMPONENT shareware)
 
     # Package the legal and info files
@@ -578,12 +597,12 @@ IF(CONFIG_LINUX_PACKAGING_SUPPORT)
         "${CMAKE_SOURCE_DIR}/notice.txt"
         "${CMAKE_SOURCE_DIR}/readme.md"
         "${CMAKE_SOURCE_DIR}/changelog.md"
-        DESTINATION share/quake2rtx/
+        DESTINATION share/lkq2rtx/
         COMPONENT shareware)
 
     # Package the icon/desktop file
     INSTALL(FILES
-        "${CMAKE_SOURCE_DIR}/setup/q2rtx.desktop"
+        "${CMAKE_SOURCE_DIR}/setup/lkq2rtx.desktop"
         DESTINATION share/applications/
         COMPONENT shareware)
     INSTALL(FILES
@@ -593,7 +612,7 @@ IF(CONFIG_LINUX_PACKAGING_SUPPORT)
 
     # Install Client Wrapper
     INSTALL(FILES
-        "${CMAKE_SOURCE_DIR}/setup/q2rtx.sh"
+        "${CMAKE_SOURCE_DIR}/setup/lkq2rtx.sh"
         DESTINATION games/
         PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
         COMPONENT shareware
@@ -602,7 +621,7 @@ IF(CONFIG_LINUX_PACKAGING_SUPPORT)
     # Install PAK file finder
     INSTALL(FILES
         "${CMAKE_SOURCE_DIR}/setup/find-retail-paks.sh"
-        DESTINATION share/quake2rtx/bin
+        DESTINATION share/lkq2rtx/bin
         PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
         COMPONENT shareware)
 ENDIF()

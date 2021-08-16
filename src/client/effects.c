@@ -98,7 +98,7 @@ void CL_SetLightStyle(int index, const char *s)
     }
 
     for (i = 0; i < ls->length; i++) {
-        ls->map[i] = (float)(s[i] - 'a') / (float)('m' - 'a');
+        ls->map[i] = (float)(s[i] - 'a') / (float)('z' - 'a');
     }
 
     if (ls->entry.prev) {
@@ -452,11 +452,11 @@ void CL_MuzzleFlash(void)
 	// Q2RTX
 	}
 
-	if (vid_rtx->integer)
-	{
-		// don't add muzzle flashes in RTX mode
-		DL_RADIUS(0.f);
-	}
+    if (!vid_muzzleflash->integer)
+    {
+        // don't add muzzle flashes in RTX mode
+        DL_RADIUS(0.f);
+    }
 }
 
 
