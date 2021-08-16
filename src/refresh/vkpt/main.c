@@ -3828,8 +3828,6 @@ R_Init_RTX(qboolean total)
 
 	// freecam mode toggle
 	cvar_pt_freecam = Cvar_Get("pt_freecam", "1", CVAR_ARCHIVE);
-	cvar_pt_widcam = Cvar_Get("pt_widcam", "0", CVAR_ARCHIVE);
-	cvar_pt_widcam->changed = cvar_widcam_changed;
 
 	// texture filtering mode:
 	// 0 -> linear magnification, anisotropic minification

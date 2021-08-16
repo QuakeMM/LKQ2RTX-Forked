@@ -486,11 +486,33 @@ SOURCE_GROUP("windows\\sources" FILES ${SRC_WINDOWS})
 SOURCE_GROUP("windows\\headers" FILES ${HEADERS_WINDOWS})
 
 IF (WIN32)
+    IF(TARGET client)
+        TARGET_INCLUDE_DIRECTORIES(client PRIVATE ../VC/inc)
+        TARGET_LINK_LIBRARIES(client winmm ws2_32)
+        SET_TARGET_PROPERTIES(client PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+        # macro redefinition, deprecation
+        TARGET_COMPILE_OPTIONS(client PRIVATE /wd4005 /wd4996)
+    ENDIF()
+
     TARGET_INCLUDE_DIRECTORIES(server PRIVATE ../VC/inc)
     TARGET_INCLUDE_DIRECTORIES(baseq2 PRIVATE ../VC/inc)
     TARGET_SOURCES(baseq2 PRIVATE windows/res/baseq2.rc)
 
     TARGET_LINK_LIBRARIES(server winmm ws2_32)
+
+    SET_TARGET_PROPERTIES(server PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+
+    # macro redefinition, deprecation
+    TARGET_COMPILE_OPTIONS(server PRIVATE /wd4005 /wd4996)
+    TARGET_COMPILE_OPTIONS(baseq2 PRIVATE /wd4005 /wd4996)
+ENDIF()
+
+TARGET_INCLUDE_DIRECTORIES(baseq2 PRIVATE ../inc)
+
+IF(TARGET client)
+    TARGET_INCLUDE_DIRECTORIES(client PRIVATE ../inc)
+    TARGET_INCLUDE_DIRECTORIES(client PRIVATE "${ZLIB_INCLUDE_DIRS}")
+ENDIF()
 
 TARGET_INCLUDE_DIRECTORIES(server PRIVATE ../inc)
 TARGET_INCLUDE_DIRECTORIES(server PRIVATE "${ZLIB_INCLUDE_DIRS}")
@@ -508,6 +530,25 @@ else()
     TARGET_LINK_LIBRARIES(server zlibstatic)
 endif()
 
+IF(UNIX)
+    TARGET_LINK_LIBRARIES(server dl m)
+ENDIF()
+
+IF(TARGET client)
+    SET_TARGET_PROPERTIES(client
+        PROPERTIES
+        OUTPUT_NAME "q2rtx"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_SOURCE_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_SOURCE_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${CMAKE_SOURCE_DIR}"
+        DEBUG_POSTFIX ""
+    )
+ENDIF()
+
+SET_TARGET_PROPERTIES(server
+    PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_DEBUG "${CMAKE_SOURCE_DIR}"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_SOURCE_DIR}"
@@ -554,7 +595,12 @@ IF(IS_64_BIT)
 			RUNTIME_OUTPUT_NAME "gamex86_64"
 		)
 	ENDIF()
-
+ELSE()
+    SET_TARGET_PROPERTIES(baseq2
+        PROPERTIES
+        LIBRARY_OUTPUT_NAME "gamex86"
+        RUNTIME_OUTPUT_NAME "gamex86"
+    )
 ENDIF()
 
 IF(CONFIG_LINUX_PACKAGING_SUPPORT)
@@ -564,6 +610,13 @@ IF(CONFIG_LINUX_PACKAGING_SUPPORT)
     ENDIF()
     INSTALL(TARGETS server DESTINATION games COMPONENT shareware)
 
+    IF(NOT CONFIG_LINUX_PACKAGING_SKIP_PKZ)
+	    # Compress NVIDIA custom content
+	    INSTALL(CODE "set(SOURCE \"${CMAKE_SOURCE_DIR}\")"
+	        SCRIPT "${CMAKE_SOURCE_DIR}/setup/package_media.cmake"
+	        SCRIPT "${CMAKE_SOURCE_DIR}/setup/package_shaders.cmake"
+	        COMPONENT shareware)
+	ENDIF()
     INSTALL(TARGETS baseq2 DESTINATION share/quake2rtx/baseq2 COMPONENT shareware)
 
     # Package data files, including the shareware pak0 for demo levels
@@ -575,13 +628,13 @@ IF(CONFIG_LINUX_PACKAGING_SUPPORT)
     )
     INSTALL(FILES
         ${SHAREWARE_DATA_FILES_LIST}
-        DESTINATION share/lkq2rtx/baseq2
+        DESTINATION share/quake2rtx/baseq2
         COMPONENT shareware)
 
     # Package shareware player model
     INSTALL(DIRECTORY
         "${CMAKE_SOURCE_DIR}/baseq2/shareware/players"
-        DESTINATION share/lkq2rtx/baseq2
+        DESTINATION share/quake2rtx/baseq2
         COMPONENT shareware)
 
     # Package the legal and info files
@@ -590,12 +643,12 @@ IF(CONFIG_LINUX_PACKAGING_SUPPORT)
         "${CMAKE_SOURCE_DIR}/notice.txt"
         "${CMAKE_SOURCE_DIR}/readme.md"
         "${CMAKE_SOURCE_DIR}/changelog.md"
-        DESTINATION share/lkq2rtx/
+        DESTINATION share/quake2rtx/
         COMPONENT shareware)
 
     # Package the icon/desktop file
     INSTALL(FILES
-        "${CMAKE_SOURCE_DIR}/setup/lkq2rtx.desktop"
+        "${CMAKE_SOURCE_DIR}/setup/q2rtx.desktop"
         DESTINATION share/applications/
         COMPONENT shareware)
     INSTALL(FILES
@@ -605,7 +658,7 @@ IF(CONFIG_LINUX_PACKAGING_SUPPORT)
 
     # Install Client Wrapper
     INSTALL(FILES
-        "${CMAKE_SOURCE_DIR}/setup/lkq2rtx.sh"
+        "${CMAKE_SOURCE_DIR}/setup/q2rtx.sh"
         DESTINATION games/
         PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
         COMPONENT shareware
@@ -614,7 +667,7 @@ IF(CONFIG_LINUX_PACKAGING_SUPPORT)
     # Install PAK file finder
     INSTALL(FILES
         "${CMAKE_SOURCE_DIR}/setup/find-retail-paks.sh"
-        DESTINATION share/lkq2rtx/bin
+        DESTINATION share/quake2rtx/bin
         PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
         COMPONENT shareware)
 ENDIF()
