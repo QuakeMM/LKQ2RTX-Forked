@@ -535,7 +535,7 @@ qboolean vkpt_build_cylinder_light(light_poly_t* light_list, int* num_lights, in
 		VectorCopy(vertices[i0], light->positions + 0);
 		VectorCopy(vertices[i1], light->positions + 3);
 		VectorCopy(vertices[i2], light->positions + 6);
-		get_triangle_off_center(light->positions, light->off_center, NULL);
+		get_triangle_off_center(light->positions, light->off_center, NULL, 1.f);
 
 		light->cluster = BSP_PointLeaf(bsp->nodes, light->off_center)->cluster;
 		light->material = NULL;
@@ -627,7 +627,7 @@ static void write_sprite_geometry(const float* view_matrix, const entity_t* enti
 
 	// TODO: use better alignment?
 	vec3_t* vertex_positions = (vec3_t*)(transparency.host_buffer_shadow + sprite_vertex_offset);
-	uint32_t* sprite_info = (int*)(transparency.host_buffer_shadow + transparency.sprite_info_host_offset);
+	uint32_t* sprite_info = (uint32_t*)(transparency.host_buffer_shadow + transparency.sprite_info_host_offset);
 
 	int sprite_count = 0;
 	for (int i = 0; i < entity_num; i++)
@@ -876,7 +876,7 @@ static qboolean allocate_and_bind_memory_to_buffers()
 	const size_t host_buffer_size = transparency.host_buffered_frame_num * transparency.host_frame_size;
 
 	_VK(vkMapMemory(qvk.device, transparency.host_buffer_memory, 0, host_buffer_size, 0,
-		&transparency.mapped_host_buffer));
+		(void**)&transparency.mapped_host_buffer));
 
 	transparency.host_buffer_shadow = Z_Mallocz(transparency.host_frame_size);
 	

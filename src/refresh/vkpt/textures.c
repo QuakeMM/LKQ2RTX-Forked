@@ -24,6 +24,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #include <assert.h>
 
+#include "material.h"
 #include "../stb/stb_image.h"
 #include "../stb/stb_image_resize.h"
 #include "../stb/stb_image_write.h"
@@ -76,9 +77,12 @@ static const float megabyte = 1048576.0f;
 
 extern cvar_t* cvar_pt_nearest;
 
+extern cvar_t* cvar_pt_surface_lights_threshold;
+
+
 void vkpt_textures_prefetch()
 {
-    byte* buffer = NULL;
+    char * buffer = NULL;
     ssize_t buffer_size = 0;
     char const * filename = "prefetch.txt";
     buffer_size = FS_LoadFile(filename, (void**)&buffer);
@@ -96,25 +100,7 @@ void vkpt_textures_prefetch()
 		if (!line)
 			continue;
 
-		image_t const * img1 = IMG_Find(line, IT_SKIN, IF_PERMANENT | IF_SRGB);
-
-		char other_name[MAX_QPATH];
-
-		// attempt loading a matching normal map
-		if (!Q_strlcpy(other_name, line, strlen(line) - 3))
-			continue;
-		Q_concat(other_name, sizeof(other_name), other_name, "_n.tga", NULL);
-		FS_NormalizePath(other_name, other_name);
-		image_t const * img2 = IMG_Find(other_name, IT_SKIN, IF_PERMANENT);
-		/* if (img2 != R_NOTEXTURE)
-			Com_Printf("Prefetched '%s' (%d)\n", other_name, (int)(img2 - r_images)); */
-
-		// attempt loading a matching emissive map
-		if (!Q_strlcpy(other_name, line, strlen(line) - 3))
-			continue;
-		Q_concat(other_name, sizeof(other_name), other_name, "_light.tga", NULL);
-		FS_NormalizePath(other_name, other_name);
-		image_t const * img3 = IMG_Find(other_name, IT_SKIN, IF_PERMANENT | IF_SRGB);
+		MAT_Find(line, IT_SKIN, IF_PERMANENT);
 	}
     // Com_Printf("Loaded '%s'\n", filename);
     FS_FreeFile(buffer);
@@ -336,10 +322,10 @@ load_blue_noise()
 
 		byte* filedata = 0;
 		uint16_t *data = 0;
-		ssize_t filelen = FS_LoadFile(buf, &filedata);
+		ssize_t filelen = FS_LoadFile(buf, (void**)&filedata);
 
 		if (filedata) {
-			data = stbi_load_16_from_memory(filedata, filelen, &w, &h, &n, 4);
+			data = stbi_load_16_from_memory(filedata, (int)filelen, &w, &h, &n, 4);
 			Z_Free(filedata);
 		}
 
@@ -538,6 +524,369 @@ static inline byte encode_linear(float x)
     return (byte)roundf(x * 255.f);
 }
 
+struct filterscratch_s
+{
+	int num_comps;
+	int pad_left, pad_right;
+	float *ptr;
+};
+
+static void filterscratch_init(struct filterscratch_s* scratch, unsigned kernel_size, int stripe_size, int num_comps)
+{
+	scratch->num_comps = num_comps;
+	scratch->pad_left = kernel_size / 2;
+	scratch->pad_right = kernel_size - scratch->pad_left - 1;
+	int num_scratch_pixels = scratch->pad_left + stripe_size + scratch->pad_right;
+	scratch->ptr = Z_Malloc(num_scratch_pixels * num_comps * sizeof(float));
+}
+
+static void filterscratch_free(struct filterscratch_s* scratch)
+{
+	Z_Free(scratch->ptr);
+}
+
+static void filterscratch_fill_from_float_image(struct filterscratch_s *scratch, float *current_stripe, int stripe_size, int element_stride)
+{
+	const int num_comps = scratch->num_comps;
+	int src = -scratch->pad_left;
+	float *dest_ptr = scratch->ptr;
+	if ((stripe_size >= scratch->pad_left) && (stripe_size >= scratch->pad_right))
+	{
+		for (; src < 0; src++)
+		{
+			const float *src_data = current_stripe + (src + stripe_size) * element_stride * num_comps;
+			memcpy(dest_ptr, src_data, num_comps * sizeof(float));
+			dest_ptr += num_comps;
+		}
+		for (; src < stripe_size; src++)
+		{
+			const float *src_data = current_stripe + src * element_stride * num_comps;
+			memcpy(dest_ptr, src_data, num_comps * sizeof(float));
+			dest_ptr += num_comps;
+		}
+		for (; src < stripe_size + scratch->pad_right; src++)
+		{
+			const float *src_data = current_stripe + (src - stripe_size) * element_stride * num_comps;
+			memcpy(dest_ptr, src_data, num_comps * sizeof(float));
+			dest_ptr += num_comps;
+		}
+	}
+	else
+	{
+		// The (probably) rarer case - filter kernel is larger than image
+		while(src < 0)
+			src += stripe_size;
+		for (int i = 0; i < scratch->pad_left + stripe_size + scratch->pad_right; i++)
+		{
+			const float *src_data = current_stripe + src * element_stride * num_comps;
+			memcpy(dest_ptr, src_data, num_comps * sizeof(float));
+			dest_ptr += scratch->num_comps;
+			src = (src + 1) % stripe_size;
+		}
+	}
+}
+
+/* Apply a (separable) filter along one dimension of an image.
+ * Whether this is done along the X or Y dimension depends on the "stripe size"
+ * and "stripe stride" options. See filter_image() for how to use it practically. */
+static void filter_one_dimension_float(float* pixels, int num_comps,
+									   const float kernel[], unsigned kernel_size,
+									   int stripe_size, int num_stripes,
+									   int stripe_stride, int element_stride)
+{
+	struct filterscratch_s scratch;
+	filterscratch_init(&scratch, kernel_size, stripe_size, num_comps);
+	float *current_stripe = pixels;
+	float* values = alloca(num_comps * sizeof(float));
+	for (int s = 0; s < num_stripes; s++)
+	{
+		// back up image data to scratch buffer
+		filterscratch_fill_from_float_image(&scratch, current_stripe, stripe_size, element_stride);
+		// filter the stripe
+		for (int i = 0; i < stripe_size; i++)
+		{
+			memset(values, 0, num_comps * sizeof(float));
+			for (int j = 0; j < kernel_size; j++)
+			{
+				float f = kernel[j];
+				float *src_p = scratch.ptr + (i + j) * num_comps;
+				for (int c = 0; c < num_comps; c++)
+				{
+					values[c] += f * src_p[c];
+				}
+			}
+			memcpy(current_stripe + i * element_stride * num_comps, values, num_comps * sizeof(float));
+		}
+		current_stripe += stripe_stride * num_comps;
+	}
+	filterscratch_free(&scratch);
+}
+
+// Apply a (separable) filter to an image.
+static void filter_float_image(float* pixels, int num_comps, const float kernel[], unsigned kernel_size, int width, int height)
+{
+	// Filter horizontally
+	filter_one_dimension_float(pixels, num_comps, kernel, kernel_size, width, height, width, 1);
+	// Filter vertically
+	filter_one_dimension_float(pixels, num_comps, kernel, kernel_size, height, width, 1, width);
+}
+
+struct bilerp_s
+{
+	int current_output_row;
+	float *current_input_data;
+	float *next_input_data;
+	float *output_data;
+};
+
+static void bilerp_init(struct bilerp_s* bilerp, int input_w)
+{
+	bilerp->current_output_row = -1;
+	bilerp->current_input_data = IMG_AllocPixels(input_w * sizeof(float) * 3);
+	bilerp->next_input_data = IMG_AllocPixels(input_w * sizeof(float) * 3);
+	bilerp->output_data = IMG_AllocPixels(input_w * 2 * sizeof(float) * 3);
+}
+
+static void bilerp_free(struct bilerp_s* bilerp)
+{
+	Z_Free(bilerp->current_input_data);
+	Z_Free(bilerp->next_input_data);
+	Z_Free(bilerp->output_data);
+}
+
+static inline void _bilerp_get_next_output_line(struct bilerp_s *bilerp, const float** output_line, const float* next_input, int input_w)
+{
+	if(bilerp->current_output_row == -1) {
+		memcpy(bilerp->next_input_data, next_input, input_w * sizeof(float) * 3);
+		bilerp->current_output_row = 0;
+	}
+
+	if((bilerp->current_output_row & 1) == 0) {
+		// Even output line: use input lines
+		// Swap next_input_data into current_input_data
+		float *tmp = bilerp->next_input_data;
+		bilerp->next_input_data = bilerp->current_input_data;
+		bilerp->current_input_data = tmp;
+	} else {
+		// Odd output line: interpolate between input lines
+		float *color_dest = bilerp->next_input_data;
+		memcpy(bilerp->next_input_data, next_input, input_w * sizeof(float) * 3);
+
+		float *color_ptr = bilerp->current_input_data;
+		float *next_color_ptr = bilerp->next_input_data;
+		for (int x = 0; x < input_w; x++) {
+			color_ptr[0] = (color_ptr[0] + next_color_ptr[0]) * 0.5f;
+			color_ptr[1] = (color_ptr[1] + next_color_ptr[1]) * 0.5f;
+			color_ptr[2] = (color_ptr[2] + next_color_ptr[2]) * 0.5f;
+			color_ptr += 3;
+			next_color_ptr += 3;
+		}
+	}
+
+	float *out_ptr = bilerp->output_data;
+	float color[3];
+	const float* color_ptr = bilerp->current_input_data;
+	for (int out_x = 0; out_x < input_w * 2 - 1; out_x++) {
+		if((out_x & 1) == 0) {
+			// Even output row: direct value
+			memcpy(color, color_ptr, 3 * sizeof(float));
+		} else {
+			// Odd output row: interpolate between colors
+			color_ptr += 3;
+			color[0] = (color[0] + color_ptr[0]) * 0.5f;
+			color[1] = (color[1] + color_ptr[1]) * 0.5f;
+			color[2] = (color[2] + color_ptr[2]) * 0.5f;
+		}
+		memcpy(out_ptr, color, 3 * sizeof(float));
+		out_ptr += 3;
+	}
+
+	// Last row: interpolate between last and first pixel
+	color[0] = (color_ptr[0] + bilerp->current_input_data[0]) * 0.5f;
+	color[1] = (color_ptr[1] + bilerp->current_input_data[1]) * 0.5f;
+	color[2] = (color_ptr[2] + bilerp->current_input_data[2]) * 0.5f;
+	memcpy(out_ptr, color, 3 * sizeof(float));
+
+	*output_line = bilerp->output_data;
+
+	bilerp->current_output_row++;
+}
+
+static inline void bilerp_get_next_output_line_from_rgb_f32(struct bilerp_s *bilerp, const float** output_line, const float* input_data, int input_w, int input_h)
+{
+	const float *next_input = NULL;
+	if (bilerp->current_output_row == -1) {
+		next_input = input_data;
+	} else if ((bilerp->current_output_row & 1) != 0) {
+		int in_y = (bilerp->current_output_row + 1) >> 1;
+		// Wraparound last line
+		if(in_y >= input_h)
+			in_y = 0;
+		next_input = input_data + in_y * input_w * 3;
+	}
+	_bilerp_get_next_output_line(bilerp, output_line, next_input, input_w);
+}
+
+// Fake an emissive texture from a diffuse texture by using pixels brighter than a certain amount
+static void apply_fake_emissive_threshold(image_t *image)
+{
+	int w = image->upload_width;
+	int h = image->upload_height;
+
+	float *bright_mask = IMG_AllocPixels(w * h * sizeof(float));
+
+	/* Extract "bright" pixels by choosing all those that have one component
+	   larger than some threshold. */
+	int bright_threshold_int = cvar_pt_surface_lights_threshold->integer;
+	clamp(bright_threshold_int, 0, 255);
+	byte bright_threshold = (byte)bright_threshold_int;
+
+	float *current_bright_mask = bright_mask;
+	byte *src_pixel = image->pix_data;
+	for (int y = 0; y < h; y++) {
+		for (int x = 0; x < w; x++) {
+			byte max_comp = max(src_pixel[0], src_pixel[1]);
+			max_comp = max(src_pixel[2], max_comp);
+			if (max_comp < bright_threshold) {
+				*current_bright_mask = 0;
+			} else {
+				*current_bright_mask = LUMINANCE(decode_srgb(src_pixel[0]), decode_srgb(src_pixel[1]), decode_srgb(src_pixel[2]));
+			}
+			current_bright_mask++;
+			src_pixel += 4;
+		}
+	}
+
+	// Blur those "bright" pixels
+	const float filter[] = { 0.0093f, 0.028002f, 0.065984f, 0.121703f, 0.175713f, 0.198596f, 0.175713f, 0.121703f, 0.065984f, 0.028002f, 0.0093f };
+	filter_float_image(bright_mask, 1, filter, sizeof(filter) / sizeof(filter[0]), w, h);
+
+	// Do a pass to find max luminance of bright_mask...
+	current_bright_mask = bright_mask;
+	float max_lum = 0;
+	for (int y = 0; y < h; y++) {
+		for (int x = 0; x < w; x++) {
+			float lum = *current_bright_mask;
+			if (lum > max_lum)
+				max_lum = lum;
+
+			current_bright_mask++;
+		}
+	}
+	// ...and use it to normalize max luminance to 1
+	float lum_scale = max_lum > 0 ? 1.0f / max_lum : 1.0f;
+
+	/* Combine blurred "bright" mask with original image (to retain some colorization).
+	   Produce float output for upsampling pass */
+	float *final = IMG_AllocPixels(w * h * 3 * sizeof(float));
+
+	float *out_final = final;
+	current_bright_mask = bright_mask;
+	byte *current_img_pixel = image->pix_data;
+	for (int y = 0; y < h; y++) {
+		for (int x = 0; x < w; x++) {
+			vec3_t color_img;
+			color_img[0] = decode_srgb(current_img_pixel[0]);
+			color_img[1] = decode_srgb(current_img_pixel[1]);
+			color_img[2] = decode_srgb(current_img_pixel[2]);
+
+			/* The formula for the "emissive" color is objectively weird,
+			   but is subjectively suitable for typical "light" textures...
+			   It keeps the "light" pixels but avoids bleeding from neighbouring
+			   "other" pixels */
+			float src_lum = LUMINANCE(color_img[0], color_img[1], color_img[2]);
+			src_lum *= src_lum;
+			float scale = *current_bright_mask * src_lum * lum_scale;
+			out_final[0] = color_img[0] * scale;
+			out_final[1] = color_img[1] * scale;
+			out_final[2] = color_img[2] * scale;
+
+			out_final += 3;
+			current_bright_mask++;
+			current_img_pixel += 4;
+		}
+	}
+	Z_Free(bright_mask);
+
+	// Interpolate final image to 2x size, apply a mild filter, to have it look less blocky
+	int width_2x = w * 2;
+	int height_2x = h * 2;
+	float *final_2x = IMG_AllocPixels(width_2x * height_2x * 3 * sizeof(float));
+
+	struct bilerp_s bilerp_final;
+	bilerp_init(&bilerp_final, w);
+	float *out_final_2x = final_2x;
+	for (int out_y = 0; out_y < height_2x; out_y++) {
+		float *img_line;
+		bilerp_get_next_output_line_from_rgb_f32(&bilerp_final, (const float**)&img_line, final, w, h);
+		memcpy(out_final_2x, img_line, width_2x * 3 * sizeof(float));
+		out_final_2x += width_2x * 3;
+	}
+	bilerp_free(&bilerp_final);
+	Z_Free(final);
+
+	const float filter_final[] = { 0.157731f, 0.684538f, 0.157731f };
+	filter_float_image(final_2x, 3, filter_final, sizeof(filter_final) / sizeof(filter_final[0]), width_2x, height_2x);
+
+	// Final -> SRGB
+	int new_size = width_2x * height_2x * 4;
+	Z_Free(image->pix_data);
+	image->pix_data = IMG_AllocPixels(new_size);
+	image->upload_width = width_2x;
+	image->upload_height = height_2x;
+
+	float* current_pixel = final_2x;
+	byte *out_pixel = image->pix_data;
+	for (int y = 0; y < height_2x; y++) {
+		for (int x = 0; x < width_2x; x++) {
+			out_pixel[0] = encode_srgb(current_pixel[0]);
+			out_pixel[1] = encode_srgb(current_pixel[1]);
+			out_pixel[2] = encode_srgb(current_pixel[2]);
+			out_pixel[3] = 255;
+
+			current_pixel += 3;
+			out_pixel += 4;
+		}
+	}
+
+	Z_Free(final_2x);
+}
+
+image_t *vkpt_fake_emissive_texture(image_t *image)
+{
+	if((image->upload_width == 1) && (image->upload_height == 1))
+	{
+		// Not much to do...
+		return image;
+	}
+
+	// Construct a new name for the fake emissive image
+	const char emissive_image_suffix[] = "*E.wal"; // 'fake' extension needed for image lookup logic
+	char emissive_image_name[MAX_QPATH];
+	Q_strlcpy(emissive_image_name, image->name, sizeof(emissive_image_name));
+	size_t pos = strlen(emissive_image_name) - 4;
+	if (pos + sizeof(emissive_image_suffix) > sizeof(emissive_image_name))
+		pos = sizeof(emissive_image_name) - sizeof(emissive_image_suffix);
+	Q_strlcpy(emissive_image_name + pos, emissive_image_suffix, sizeof(emissive_image_name) - pos);
+
+	// See if we previously created a fake emissive texture for the same base texture
+	image_t *prev_image = IMG_FindExisting(emissive_image_name, image->type);
+	if(prev_image != R_NOTEXTURE)
+	{
+		prev_image->registration_sequence = registration_sequence;
+		return prev_image;
+	}
+
+	image_t *new_image = IMG_Clone(image, emissive_image_name);
+	if(new_image == R_NOTEXTURE)
+		return image;
+
+	new_image->flags |= IF_FAKE_EMISSIVE;
+	apply_fake_emissive_threshold(new_image);
+
+	return new_image;
+}
+
 void
 vkpt_extract_emissive_texture_info(image_t *image)
 {
@@ -718,6 +1067,10 @@ void IMG_ReloadAll(void)
             {
                 vkpt_normalize_normal_map(image);
             }
+            if(image->flags & IF_FAKE_EMISSIVE)
+            {
+                apply_fake_emissive_threshold(image);
+            }
 
             image->last_modified = last_modifed; // reset time stamp because load_img doesn't
 
@@ -854,6 +1207,7 @@ vkpt_textures_initialize()
 	};
 	_VK(vkCreateSampler(qvk.device, &sampler_info, NULL, &qvk.tex_sampler));
 	ATTACH_LABEL_VARIABLE(qvk.tex_sampler, SAMPLER);
+
 	VkSamplerCreateInfo sampler_nearest_info = {
 		.sType                   = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
 		.magFilter               = VK_FILTER_NEAREST,
@@ -870,7 +1224,9 @@ vkpt_textures_initialize()
 	_VK(vkCreateSampler(qvk.device, &sampler_nearest_info, NULL, &qvk.tex_sampler_nearest));
 	ATTACH_LABEL_VARIABLE(qvk.tex_sampler_nearest, SAMPLER);
 
-		VkSamplerCreateInfo sampler_nearest_mipmap_aniso_info = {
+
+	VkSamplerCreateInfo sampler_nearest_mipmap_aniso_info = {
+
 		.sType                   = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
 		.magFilter               = VK_FILTER_NEAREST,
 		.minFilter               = VK_FILTER_LINEAR,
@@ -1080,7 +1436,7 @@ vkpt_textures_destroy()
 	vkFreeMemory      (qvk.device, mem_blue_noise,      NULL);
 	vkDestroyImage    (qvk.device, img_blue_noise,      NULL);
 	vkDestroyImageView(qvk.device, imv_blue_noise,      NULL);
-	vkDestroySampler  (qvk.device, qvk.tex_sampler,         NULL);
+	vkDestroySampler  (qvk.device, qvk.tex_sampler, NULL);
 	vkDestroySampler  (qvk.device, qvk.tex_sampler_nearest, NULL);
 	vkDestroySampler  (qvk.device, qvk.tex_sampler_nearest_mipmap_aniso, NULL);
 	vkDestroySampler  (qvk.device, qvk.tex_sampler_linear_clamp, NULL);
@@ -1389,7 +1745,7 @@ void vkpt_textures_update_descriptor_set()
 		return;
 
 	descriptor_set_dirty_flags[qvk.current_frame_index] = 0;
-
+	
 	for(int i = 0; i < MAX_RIMAGES; i++) {
 		image_t *q_img = r_images + i;
 		
