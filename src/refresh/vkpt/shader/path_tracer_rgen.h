@@ -23,7 +23,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #define RAY_GEN_DESCRIPTOR_SET_IDX 0
 layout(set = RAY_GEN_DESCRIPTOR_SET_IDX, binding = 0)
-uniform rt_accelerationStructure topLevelAS;
+uniform accelerationStructureEXT topLevelAS;
 
 #define GLOBAL_TEXTURES_DESC_SET_IDX 2
 #include "global_textures.h"
@@ -80,8 +80,8 @@ RayPayload ray_payload_brdf;
 
 #define RT_PAYLOAD_SHADOW  0
 #define RT_PAYLOAD_BRDF 1
-layout(location = RT_PAYLOAD_SHADOW) rt_rayPayload RayPayloadShadow ray_payload_shadow;
-layout(location = RT_PAYLOAD_BRDF) rt_rayPayload RayPayload ray_payload_brdf;
+layout(location = RT_PAYLOAD_SHADOW) rayPayloadEXT RayPayloadShadow ray_payload_shadow;
+layout(location = RT_PAYLOAD_BRDF) rayPayloadEXT RayPayload ray_payload_brdf;
 
 #endif
 
@@ -358,7 +358,7 @@ trace_ray(Ray ray, bool cull_back_faces, int instance_mask, bool skip_procedural
 
 #else
 
-	rt_traceRay( topLevelAS, rayFlags, instance_mask,
+	traceRayEXT( topLevelAS, rayFlags, instance_mask,
 			SBT_RCHIT_OPAQUE /*sbtRecordOffset*/, 0 /*sbtRecordStride*/, SBT_RMISS_PATH_TRACER /*missIndex*/,
 			ray.origin, ray.t_min, ray.direction, ray.t_max, RT_PAYLOAD_BRDF);
 
@@ -404,7 +404,6 @@ trace_shadow_ray(Ray ray, int cull_mask)
 		{
 			if (pt_logic_masked(primitiveID, instanceCustomIndex, bary))
 				rayQueryConfirmIntersectionEXT(rayQuery);
-			break;
 		}
 	}
 
@@ -417,7 +416,7 @@ trace_shadow_ray(Ray ray, int cull_mask)
 
 	ray_payload_shadow.missed = 0;
 
-	rt_traceRay( topLevelAS, rayFlags, cull_mask,
+	traceRayEXT( topLevelAS, rayFlags, cull_mask,
 			SBT_RCHIT_EMPTY /*sbtRecordOffset*/, 0 /*sbtRecordStride*/, SBT_RMISS_SHADOW /*missIndex*/,
 			ray.origin, ray.t_min, ray.direction, ray.t_max, RT_PAYLOAD_SHADOW);
 
@@ -465,7 +464,7 @@ trace_caustic_ray(Ray ray, int surface_medium)
 
 #else
 
-	rt_traceRay(topLevelAS, rayFlags, instance_mask, SBT_RCHIT_OPAQUE, 0, SBT_RMISS_PATH_TRACER,
+	traceRayEXT(topLevelAS, rayFlags, instance_mask, SBT_RCHIT_OPAQUE, 0, SBT_RMISS_PATH_TRACER,
 			ray.origin, ray.t_min, ray.direction, ray.t_max, RT_PAYLOAD_BRDF);
 
 #endif
@@ -542,6 +541,15 @@ AdjustRoughnessToksvig(float roughness, float normalMapLen, float mip_level)
     return SpecPowerToRoughnessSquare(ft * shininess / effect);
 }
 
+float
+get_specular_sampled_lighting_weight(float roughness, vec3 N, vec3 V, vec3 L, float pdfw)
+{
+    float ggxVndfPdf = ImportanceSampleGGX_VNDF_PDF(max(roughness, 0.01), N, V, L);
+  
+    // Balance heuristic assuming one sample from each strategy: light sampling and BRDF sampling
+    return clamp(pdfw / (pdfw + ggxVndfPdf), 0, 1);
+}
+
 void
 get_direct_illumination(
 	vec3 position, 
@@ -578,7 +586,8 @@ get_direct_illumination(
 	float phong_weight = clamp(surface_specular * direct_specular_weight, 0, 0.9);
 
 	int polygonal_light_index = -1;
-	float polygonal_light_area = 0;
+	float polygonal_light_pdfw = 0;
+	bool polygonal_light_is_sky = false;
 
 	vec3 rng = vec3(
 		get_rng(RNG_NEE_LIGHT_SELECTION(bounce)),
@@ -601,7 +610,8 @@ get_direct_illumination(
 			pos_on_light_polygonal, 
 			contrib_polygonal,
 			polygonal_light_index,
-			polygonal_light_area,
+			polygonal_light_pdfw,
+			polygonal_light_is_sky,
 			rng);
 	}
 
@@ -690,25 +700,24 @@ get_direct_illumination(
 
 	diffuse = vis * contrib;
 
-	if(is_polygonal && direct_specular_weight > 0)
+	vec3 L = pos_on_light - position;
+	L = normalize(L);
+
+	if(is_polygonal && direct_specular_weight > 0 && polygonal_light_is_sky && global_ubo.pt_specular_mis != 0)
 	{
 		// MIS with direct specular and indirect specular.
 		// Only applied to sky lights, for two reasons:
 		//  1) Non-sky lights are trimmed to match the light texture, and indirect rays don't see that;
 		//  2) Non-sky lights are usually away from walls, so the direct sampling issue is not as pronounced.
-		direct_specular_weight *= 1.0 - smoothstep(
-			global_ubo.pt_direct_area_threshold,
-			global_ubo.pt_direct_area_threshold * 2, 
-			polygonal_light_area);
+
+		direct_specular_weight *= get_specular_sampled_lighting_weight(roughness,
+			normal, -view_direction, L, polygonal_light_pdfw);
 	}
 
 	if(vis > 0 && direct_specular_weight > 0)
 	{
 		specular = diffuse * (GGX(view_direction, normalize(pos_on_light - position), normal, roughness, 0.0) * direct_specular_weight);
 	}
-
-	vec3 L = pos_on_light - position;
-	L = normalize(L);
 
 	float NdotL = max(0, dot(normal, L));
 
