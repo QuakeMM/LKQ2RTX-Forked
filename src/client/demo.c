@@ -429,7 +429,11 @@ static void CL_Record_f(void)
         }
 
         MSG_WriteByte(svc_configstring);
+#ifndef EXTENDED_LIMITS
         MSG_WriteShort(i);
+#else
+        MSG_WriteLong(i);
+#endif
         MSG_WriteData(s, len);
         MSG_WriteByte(0);
     }
@@ -490,7 +494,11 @@ static void resume_record(void)
             }
 
             SZ_WriteByte(&cls.demo.buffer, svc_configstring);
+#ifndef EXTENDED_LIMITS
             SZ_WriteShort(&cls.demo.buffer, index);
+#else
+            SZ_WriteLong(&cls.demo.buffer, index);
+#endif
             SZ_Write(&cls.demo.buffer, s, len);
             SZ_WriteByte(&cls.demo.buffer, 0);
         }
@@ -904,7 +912,11 @@ void CL_EmitDemoSnapshot(void)
             len = MAX_QPATH;
 
         MSG_WriteByte(svc_configstring);
+#ifndef EXTENDED_LIMITS
         MSG_WriteShort(i);
+#else
+        MSG_WriteLong(i);
+#endif
         MSG_WriteData(to, len);
         MSG_WriteByte(0);
     }
@@ -1208,7 +1220,11 @@ demoInfo_t *CL_GetDemoInfo(const char *path, demoInfo_t *info)
             if (c != svc_configstring) {
                 break;
             }
+#ifndef EXTENDED_LIMITS
             index = MSG_ReadShort();
+#else
+            index = MSG_ReadLong();
+#endif
             if (index < 0 || index >= MAX_CONFIGSTRINGS) {
                 goto fail;
             }
@@ -1230,7 +1246,11 @@ demoInfo_t *CL_GetDemoInfo(const char *path, demoInfo_t *info)
         clientNum = MSG_ReadShort();
 
         while (1) {
+#ifndef EXTENDED_LIMITS
             index = MSG_ReadShort();
+#else
+            index = MSG_ReadLong();
+#endif
             if (index == MAX_CONFIGSTRINGS) {
                 break;
             }
