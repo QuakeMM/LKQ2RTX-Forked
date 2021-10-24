@@ -127,7 +127,8 @@ vkpt_vertex_buffer_upload_bsp_mesh_to_staging(bsp_mesh_t *bsp_mesh)
 
 	memcpy(vbo->positions_bsp,  bsp_mesh->positions, num_vertices * sizeof(float) * 3   );
 	memcpy(vbo->tex_coords_bsp, bsp_mesh->tex_coords,num_vertices * sizeof(float) * 2   );
-    memcpy(vbo->tangents_bsp,   bsp_mesh->tangents,  num_vertices * sizeof(uint32_t) / 3);
+	memcpy(vbo->normals_bsp,    bsp_mesh->normals,   num_vertices * sizeof(uint32_t));
+	memcpy(vbo->tangents_bsp,   bsp_mesh->tangents,  num_vertices * sizeof(uint32_t));
 	memcpy(vbo->materials_bsp,  bsp_mesh->materials, num_vertices * sizeof(uint32_t) / 3);
 	memcpy(vbo->emissive_factors_bsp,  bsp_mesh->emissive_factors, num_vertices * sizeof(uint32_t) / 3);
 	memcpy(vbo->clusters_bsp, bsp_mesh->clusters, num_vertices * sizeof(uint32_t) / 3);
@@ -269,10 +270,10 @@ copy_light(const light_poly_t* light, float* vblight, const float* sky_radiance)
 	if (light->style != 0 && vkpt_refdef.fd->lightstyles)
 	{
 		style_scale = vkpt_refdef.fd->lightstyles[light->style].white;
-		style_scale = max(0, min(1, style_scale));
+		style_scale = max(0.f, min(2.f, style_scale));
 
 		prev_style = vkpt_refdef.prev_lightstyles[light->style].white;
-		prev_style = max(0, min(1, prev_style));
+		prev_style = max(0.f, min(2.f, prev_style));
 	}
 
 	float mat_scale = light->material ? light->material->emissive_factor : 1.f;
@@ -397,6 +398,8 @@ vkpt_light_buffer_upload_to_staging(qboolean render_world, bsp_mesh_t *bsp_mesh,
 		mat_data[3] |= floatToHalf(material->emissive_factor) << 16;
 		mat_data[4] |= (material->num_frames & 0xffff);
 		mat_data[4] |= (material->next_frame & 0xffff) << 16;
+		mat_data[5] = floatToHalf(material->specular_factor);
+		mat_data[5] |= floatToHalf(material->base_factor) << 16;
 	}
 
 	memcpy(lbo->cluster_debug_mask, cluster_debug_mask, MAX_LIGHT_LISTS / 8);

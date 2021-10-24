@@ -33,7 +33,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #define MAX_LIGHT_POLYS         4096
 #define LIGHT_POLY_VEC4S        4
-#define MATERIAL_UINTS          5
+#define MATERIAL_UINTS          6
 
 // should match the same constant declared in material.h
 #define MAX_PBR_MATERIALS      4096
@@ -62,7 +62,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define BSP_VERTEX_BUFFER_LIST \
 	VERTEX_BUFFER_LIST_DO(float,    3, positions_bsp,         (MAX_VERT_BSP        )) \
 	VERTEX_BUFFER_LIST_DO(float,    2, tex_coords_bsp,        (MAX_VERT_BSP        )) \
-	VERTEX_BUFFER_LIST_DO(uint32_t, 1, tangents_bsp,          (MAX_VERT_BSP / 3    )) \
+	VERTEX_BUFFER_LIST_DO(uint32_t, 1, normals_bsp,           (MAX_VERT_BSP        )) \
+	VERTEX_BUFFER_LIST_DO(uint32_t, 1, tangents_bsp,          (MAX_VERT_BSP        )) \
 	VERTEX_BUFFER_LIST_DO(uint32_t, 1, materials_bsp,         (MAX_VERT_BSP / 3    )) \
 	VERTEX_BUFFER_LIST_DO(uint32_t, 1, clusters_bsp,          (MAX_VERT_BSP / 3    )) \
 	VERTEX_BUFFER_LIST_DO(float,    1, texel_density_bsp,     (MAX_VERT_BSP / 3    )) \
@@ -203,7 +204,7 @@ typedef struct
 
 struct MaterialInfo
 {
-	uint diffuse_texture;
+	uint base_texture;
 	uint normals_texture;
 	uint emissive_texture;
 	uint mask_texture;
@@ -211,6 +212,8 @@ struct MaterialInfo
 	float roughness_override;
 	float metalness_factor;
 	float emissive_factor;
+	float specular_factor;
+	float base_factor;
 	float light_style_scale;
 	uint num_frames;
 	uint next_frame;
@@ -433,22 +436,18 @@ get_bsp_triangle(uint prim_id)
 	t.positions[2] = get_positions_bsp(prim_id * 3 + 2);
 
 	t.positions_prev = t.positions;
+	
+	t.normals[0] = decode_normal(get_normals_bsp(prim_id * 3 + 0));
+	t.normals[1] = decode_normal(get_normals_bsp(prim_id * 3 + 1));
+	t.normals[2] = decode_normal(get_normals_bsp(prim_id * 3 + 2));
 
-	vec3 normal = normalize(cross(
-				t.positions[1] - t.positions[0],
-				t.positions[2] - t.positions[0]));
-
-	t.normals[0] = normal;
-	t.normals[1] = normal;
-	t.normals[2] = normal;
+	t.tangents[0] = decode_normal(get_tangents_bsp(prim_id * 3 + 0));
+	t.tangents[1] = decode_normal(get_tangents_bsp(prim_id * 3 + 1));
+	t.tangents[2] = decode_normal(get_tangents_bsp(prim_id * 3 + 2));
 
 	t.tex_coords[0] = get_tex_coords_bsp(prim_id * 3 + 0);
 	t.tex_coords[1] = get_tex_coords_bsp(prim_id * 3 + 1);
 	t.tex_coords[2] = get_tex_coords_bsp(prim_id * 3 + 2);
-
-    t.tangents[0] = decode_normal(get_tangents_bsp(prim_id));
-    t.tangents[1] = t.tangents[0];
-    t.tangents[2] = t.tangents[0];
 
 	t.material_id = get_materials_bsp(prim_id);
 
@@ -547,9 +546,10 @@ get_material_info(uint material_id)
 	data[2] = get_material_table(material_index * MATERIAL_UINTS + 2);
 	data[3] = get_material_table(material_index * MATERIAL_UINTS + 3);
 	data[4] = get_material_table(material_index * MATERIAL_UINTS + 4);
+	data[5] = get_material_table(material_index * MATERIAL_UINTS + 5);
 
 	MaterialInfo minfo;
-	minfo.diffuse_texture = data[0] & 0xffff;
+	minfo.base_texture = data[0] & 0xffff;
 	minfo.normals_texture = data[0] >> 16;
 	minfo.emissive_texture = data[1] & 0xffff;
 	minfo.mask_texture = data[1] >> 16;
@@ -557,6 +557,8 @@ get_material_info(uint material_id)
 	minfo.roughness_override = unpackHalf2x16(data[2]).y;
 	minfo.metalness_factor = unpackHalf2x16(data[3]).x;
 	minfo.emissive_factor = unpackHalf2x16(data[3]).y;
+	minfo.specular_factor = unpackHalf2x16(data[5]).x;
+	minfo.base_factor = unpackHalf2x16(data[5]).y;
 	minfo.num_frames = data[4] & 0xffff;
 	minfo.next_frame = (data[4] >> 16) & (MAX_PBR_MATERIALS - 1);
 

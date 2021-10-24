@@ -37,6 +37,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	UBO_CVAR_DO(flt_antilag_hf, 1) /* A-SVGF anti-lag filter strength, [0..inf) */ \
 	UBO_CVAR_DO(flt_antilag_lf, 0.2) \
 	UBO_CVAR_DO(flt_antilag_spec, 2) \
+	UBO_CVAR_DO(flt_antilag_spec_motion, 0.004) /* scaler for motion vector scaled specular anti-blur adjustment */ \
 	UBO_CVAR_DO(flt_atrous_depth, 0.5) /* wavelet fitler sensitivity to depth, [0..inf) */ \
 	UBO_CVAR_DO(flt_atrous_deflicker_lf, 2) /* max brightness difference between adjacent pixels in the LF channel, (0..inf) */ \
 	UBO_CVAR_DO(flt_atrous_hf, 4) /* number of a-trous wavelet filter iterations on the LF channel, [0..4] */ \
@@ -78,6 +79,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	UBO_CVAR_DO(pt_explosion_brightness, 4.0) /* brightness factor for explosions */ \
 	UBO_CVAR_DO(pt_fake_roughness_threshold, 0.20) /* roughness value where the path tracer starts switching indirect light specular sampling from NDF based to SH based, [0..1] */ \
 	UBO_CVAR_DO(pt_focus, 200) /* focal distance for the Depth of Field effect, in world units */ \
+	UBO_CVAR_DO(pt_fog_brightness, 0.01) /* global multiplier for the color of fog volumes */ \
 	UBO_CVAR_DO(pt_indirect_polygon_lights, 1) /* switch for bounce lighting from local polygon lights, 0 or 1 */ \
 	UBO_CVAR_DO(pt_indirect_sphere_lights, 1) /* switch for bounce lighting from local sphere lights, 0 or 1 */ \
 	UBO_CVAR_DO(pt_light_stats, 1) /* switch for statistical light PDF correction, 0 or 1 */ \
@@ -189,6 +191,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	GLOBAL_UBO_VAR_LIST_DO(int,             prev_taa_output_width) \
 	GLOBAL_UBO_VAR_LIST_DO(int,             prev_taa_output_height) \
 	\
+	GLOBAL_UBO_VAR_LIST_DO(uvec4,           easu_const0) \
+	GLOBAL_UBO_VAR_LIST_DO(uvec4,           easu_const1) \
+	GLOBAL_UBO_VAR_LIST_DO(uvec4,           easu_const2) \
+	GLOBAL_UBO_VAR_LIST_DO(uvec4,           easu_const3) \
+	GLOBAL_UBO_VAR_LIST_DO(uvec4,           rcas_const0) \
+	\
 	GLOBAL_UBO_VAR_LIST_DO(vec2,            sub_pixel_jitter) \
 	GLOBAL_UBO_VAR_LIST_DO(float,           prev_adapted_luminance) \
 	GLOBAL_UBO_VAR_LIST_DO(float,           padding1) \
@@ -210,6 +218,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	GLOBAL_UBO_VAR_LIST_DO(mat4,            environment_rotation_matrix) \
 	GLOBAL_UBO_VAR_LIST_DO(mat4,            shadow_map_VP) \
 	GLOBAL_UBO_VAR_LIST_DO(mat4,            security_camera_data[MAX_CAMERAS]) \
+	GLOBAL_UBO_VAR_LIST_DO(ShaderFogVolume, fog_volumes[MAX_FOG_VOLUMES]) \
 	\
 	UBO_CVAR_LIST // WARNING: Do not put any other members into global_ubo after this: the CVAR list is not vec4-aligned
 
@@ -264,6 +273,16 @@ typedef struct {
 	int frame; float padding[3];
 } BspMeshInstance;
 
+typedef struct ShaderFogVolume {
+	vec3_t mins;
+	uint is_active;
+	vec3_t maxs;
+	float pad2;
+	vec3_t color;
+	float pad3;
+	vec4_t density;
+} ShaderFogVolume_t;
+
 #define int_t int32_t
 typedef struct QVKUniformBuffer_s {
 #define GLOBAL_UBO_VAR_LIST_DO(type, name) type##_t name;
@@ -297,6 +316,16 @@ struct ModelInstance {
 struct BspMeshInstance {
 	mat4 M;
 	ivec4 frame;
+};
+
+struct ShaderFogVolume {
+	vec3 mins;
+	uint is_active;
+	vec3 maxs;
+	float pad2;
+	vec3 color;
+	float pad3;
+	vec4 density;
 };
 
 struct GlobalUniformBuffer {

@@ -267,7 +267,9 @@ SET(SRC_VKPT
 	refresh/vkpt/bloom.c
 	refresh/vkpt/bsp_mesh.c
 	refresh/vkpt/draw.c
+	refresh/vkpt/fog.c
 	refresh/vkpt/freecam.c
+	refresh/vkpt/fsr.c
 	refresh/vkpt/main.c
 	refresh/vkpt/material.c
 	refresh/vkpt/matrix.c
@@ -295,6 +297,7 @@ SET(HEADERS_VKPT
 	refresh/vkpt/vk_util.h
 	refresh/vkpt/buddy_allocator.h
 	refresh/vkpt/device_memory_allocator.h
+	refresh/vkpt/fog.h
 	refresh/vkpt/material.h
 	refresh/vkpt/physical_sky.h
 	refresh/vkpt/precomputed_sky.h
@@ -329,6 +332,10 @@ set(SRC_SHADERS
 	refresh/vkpt/shader/stretch_pic.vert
 	refresh/vkpt/shader/final_blit_lanczos.frag
 	refresh/vkpt/shader/final_blit.vert
+	refresh/vkpt/shader/fsr_easu_fp16.comp
+	refresh/vkpt/shader/fsr_easu_fp32.comp
+	refresh/vkpt/shader/fsr_rcas_fp16.comp
+	refresh/vkpt/shader/fsr_rcas_fp32.comp
 )
 
 set(SRC_RT_SHADERS
@@ -343,7 +350,6 @@ set(SRC_RT_SHADERS
 	refresh/vkpt/shader/path_tracer_beam.rahit
 	refresh/vkpt/shader/path_tracer_beam.rint
 	refresh/vkpt/shader/path_tracer_explosion.rahit
-	refresh/vkpt/shader/path_tracer_shadow.rmiss
 	refresh/vkpt/shader/reflect_refract.rgen
 )
 
@@ -362,7 +368,7 @@ IF(IS_64_BIT)
     endforeach()
 
     foreach(s ${SRC_SHADERS})
-        compile_shader(SOURCE_FILE ${s} OUTPUT_FILE_LIST shader_bytecode)
+        compile_shader(SOURCE_FILE ${s} INCLUDES "-I${CMAKE_CURRENT_SOURCE_DIR}/refresh/vkpt/fsr" OUTPUT_FILE_LIST shader_bytecode)
     endforeach()
 
     add_custom_target(shaders DEPENDS ${shader_bytecode})
