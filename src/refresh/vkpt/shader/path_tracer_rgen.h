@@ -23,7 +23,8 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 
 #define RAY_GEN_DESCRIPTOR_SET_IDX 0
 layout(set = RAY_GEN_DESCRIPTOR_SET_IDX, binding = 0)
-uniform accelerationStructureEXT topLevelAS;
+uniform accelerationStructureEXT topLevelAS[TLAS_COUNT];
+
 
 #define GLOBAL_TEXTURES_DESC_SET_IDX 2
 #include "global_textures.h"
@@ -54,8 +55,8 @@ uniform accelerationStructureEXT topLevelAS;
 #define RNG_SUNLIGHT_X(bounce)			  (4 + 7 + 9 * bounce)
 #define RNG_SUNLIGHT_Y(bounce)			  (4 + 8 + 9 * bounce)
 
-#define PRIMARY_RAY_CULL_MASK        (AS_FLAG_EVERYTHING & ~(AS_FLAG_VIEWER_MODELS | AS_FLAG_CUSTOM_SKY))
-#define REFLECTION_RAY_CULL_MASK     (AS_FLAG_OPAQUE | AS_FLAG_PARTICLES | AS_FLAG_EXPLOSIONS | AS_FLAG_SKY)
+#define PRIMARY_RAY_CULL_MASK        (AS_FLAG_OPAQUE | AS_FLAG_TRANSPARENT | AS_FLAG_VIEWER_WEAPON | AS_FLAG_SKY)
+#define REFLECTION_RAY_CULL_MASK     (AS_FLAG_OPAQUE | AS_FLAG_SKY)
 #define BOUNCE_RAY_CULL_MASK         (AS_FLAG_OPAQUE | AS_FLAG_SKY | AS_FLAG_CUSTOM_SKY)
 #define SHADOW_RAY_CULL_MASK         (AS_FLAG_OPAQUE)
 
@@ -70,18 +71,17 @@ uniform accelerationStructureEXT topLevelAS;
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-// Just a global variable in RQ mode.
+// Just global variables in RQ mode.
 // No shadow payload necessary.
-RayPayload ray_payload_brdf;
+RayPayloadGeometry ray_payload_geometry;
+RayPayloadEffects ray_payload_effects;
 
 #include "path_tracer_hit_shaders.h"
 
 #else // !KHR_RAY_QUERY
 
-#define RT_PAYLOAD_SHADOW  0
-#define RT_PAYLOAD_BRDF 1
-layout(location = RT_PAYLOAD_SHADOW) rayPayloadEXT RayPayloadShadow ray_payload_shadow;
-layout(location = RT_PAYLOAD_BRDF) rayPayloadEXT RayPayload ray_payload_brdf;
+layout(location = RT_PAYLOAD_GEOMETRY) rayPayloadEXT RayPayloadGeometry ray_payload_geometry;
+layout(location = RT_PAYLOAD_EFFECTS) rayPayloadEXT RayPayloadEffects ray_payload_effects;
 
 #endif
 
@@ -146,31 +146,31 @@ ivec2 get_image_size()
 }
 
 bool
-found_intersection(RayPayload rp)
+found_intersection(RayPayloadGeometry rp)
 {
 	return rp.instance_prim != ~0u;
 }
 
 bool
-is_sky(RayPayload rp)
+is_sky(RayPayloadGeometry rp)
 {
 	return (rp.instance_prim & INSTANCE_SKY_FLAG) != 0;
 }
 
 bool
-is_dynamic_instance(RayPayload pay_load)
+is_dynamic_instance(RayPayloadGeometry pay_load)
 {
 	return (pay_load.instance_prim & INSTANCE_DYNAMIC_FLAG) > 0;
 }
 
 uint
-get_primitive(RayPayload pay_load)
+get_primitive(RayPayloadGeometry pay_load)
 {
 	return pay_load.instance_prim & PRIM_ID_MASK;
 }
 
 Triangle
-get_hit_triangle(RayPayload rp)
+get_hit_triangle(RayPayloadGeometry rp)
 {
 	uint prim = get_primitive(rp);
 
@@ -180,7 +180,7 @@ get_hit_triangle(RayPayload rp)
 }
 
 vec3
-get_hit_barycentric(RayPayload rp)
+get_hit_barycentric(RayPayloadGeometry rp)
 {
 	vec3 bary;
 	bary.yz = rp.barycentric;
@@ -249,42 +249,27 @@ is_camera(uint material)
 }
 
 vec3
-correct_albedo(vec3 albedo)
-{
-    return max(vec3(0), pow(albedo, vec3(ALBEDO_TRANSFORM_POWER)) * ALBEDO_TRANSFORM_SCALE + vec3(ALBEDO_TRANSFORM_BIAS));
-}
-
-vec3
 correct_emissive(uint material_id, vec3 emissive)
 {
 	return max(vec3(0), emissive.rgb + vec3(EMISSIVE_TRANSFORM_BIAS));
 }
 
 void
-trace_ray(Ray ray, bool cull_back_faces, int instance_mask, bool skip_procedural)
+trace_geometry_ray(Ray ray, bool cull_back_faces, int instance_mask)
 {
 	uint rayFlags = 0;
 	if (cull_back_faces)
 		rayFlags |= gl_RayFlagsCullBackFacingTrianglesEXT;
-	if (skip_procedural)
+	rayFlags |= gl_RayFlagsSkipProceduralPrimitives;
 
-
-		rayFlags |= gl_RayFlagsSkipProceduralPrimitives;
-
-
-	ray_payload_brdf.barycentric = vec2(0);
-	ray_payload_brdf.instance_prim = 0;
-	ray_payload_brdf.hit_distance = 0;
-	ray_payload_brdf.close_transparencies = uvec2(0);
-	ray_payload_brdf.farthest_transparency = uvec2(0);
-    ray_payload_brdf.closest_max_transparent_distance = 0;
-	ray_payload_brdf.farthest_transparent_distance = 0;
-	ray_payload_brdf.farthest_transparent_depth = 0;
+	ray_payload_geometry.barycentric = vec2(0);
+	ray_payload_geometry.instance_prim = ~0u;
+	ray_payload_geometry.hit_distance = 0;
 
 #ifdef KHR_RAY_QUERY
 
 	rayQueryEXT rayQuery;
-	rayQueryInitializeEXT(rayQuery, topLevelAS, rayFlags, instance_mask, 
+	rayQueryInitializeEXT(rayQuery, topLevelAS[TLAS_INDEX_GEOMETRY], rayFlags, instance_mask, 
 		ray.origin, ray.t_min, ray.direction, ray.t_max);
 
 	// Start traversal: return false if traversal is complete
@@ -296,6 +281,129 @@ trace_ray(Ray ray, bool cull_back_faces, int instance_mask, bool skip_procedural
 		float hitT = rayQueryGetIntersectionTEXT(rayQuery, false);
 		vec2 bary = rayQueryGetIntersectionBarycentricsEXT(rayQuery, false);
 		bool isProcedural = rayQueryGetIntersectionTypeEXT(rayQuery, false) == gl_RayQueryCandidateIntersectionAABBEXT;
+
+		switch(sbtOffset)
+		{
+		case SBTO_MASKED:
+			if (pt_logic_masked(primitiveID, instanceCustomIndex, bary))
+				rayQueryConfirmIntersectionEXT(rayQuery);
+			break;
+		}
+	}
+
+	if (rayQueryGetIntersectionTypeEXT(rayQuery, true) == gl_RayQueryCommittedIntersectionTriangleEXT)
+	{
+		pt_logic_rchit(ray_payload_geometry, 
+			rayQueryGetIntersectionPrimitiveIndexEXT(rayQuery, true),
+			rayQueryGetIntersectionInstanceCustomIndexEXT(rayQuery, true),
+			rayQueryGetIntersectionTEXT(rayQuery, true),
+			rayQueryGetIntersectionBarycentricsEXT(rayQuery, true));
+	}
+
+#else
+
+	traceRayEXT( topLevelAS[TLAS_INDEX_GEOMETRY], rayFlags, instance_mask,
+			SBT_RCHIT_GEOMETRY /*sbtRecordOffset*/, 0 /*sbtRecordStride*/, SBT_RMISS_EMPTY /*missIndex*/,
+			ray.origin, ray.t_min, ray.direction, ray.t_max, RT_PAYLOAD_GEOMETRY);
+
+#endif
+}
+
+float vmin(vec3 v) { return min(v.x, min(v.y, v.z)); }
+float vmax(vec3 v) { return max(v.x, max(v.y, v.z)); }
+
+// Loops over the defined fog volumes and finds the two closest ones along the ray.
+// They are stored in the order of min distance in rp.fog1 (closer) and rp.fog2 (further away).
+// If the ray starts in a fog volume, that volume will be rp.fog1 with t_min = ray.t_min.
+void find_fog_volumes(inout RayPayloadEffects rp, Ray ray)
+{
+	vec3 inv_dir = vec3(1.0) / ray.direction;
+	for (int i = 0; i < MAX_FOG_VOLUMES; i++)
+	{
+		const ShaderFogVolume volume = global_ubo.fog_volumes[i];
+
+		if (volume.is_active == 0)
+			return;
+
+		vec3 t1 = (volume.mins - ray.origin) * inv_dir;
+		vec3 t2 = (volume.maxs - ray.origin) * inv_dir;
+		float t_in = vmax(min(t1, t2));
+		float t_out = vmin(max(t1, t2));
+		t_in = max(t_in, ray.t_min);
+		t_out = min(t_out, ray.t_max);
+
+		if (t_out > t_in)
+		{
+			vec2 first_t_min_max = unpackHalf2x16(rp.fog1.w);
+			vec2 second_t_min_max = unpackHalf2x16(rp.fog2.w);
+
+			bool replaces_first = t_in < first_t_min_max.x || first_t_min_max.y == 0;
+			bool replaces_second = t_in < second_t_min_max.x || second_t_min_max.y == 0;
+
+			if (replaces_first || replaces_second)
+			{
+				uvec4 packed;
+				packed.xy = packHalf4x16(vec4(volume.color * global_ubo.pt_fog_brightness, 0));
+				packed.z = packHalf2x16(vec2(t_in, t_out));
+
+				// Convert the volumetric density function into a 1D function along the ray
+				float density_variable = dot(volume.density.xyz, ray.direction) * 0.5;
+				float density_constant = dot(volume.density.xyz, ray.origin) + volume.density.w;
+				// Scale the density stored here because typical values are very small, in fp16 denormal range
+				packed.w = packHalf2x16(vec2(density_variable, density_constant) * 65536.0);
+
+				if (replaces_first)
+				{
+					// Push fog1 to fog2, replace fog1 with the new volume
+					rp.fog2 = rp.fog1;
+					rp.fog1 = packed;
+				}
+				else // if (replaces_second) -- must be true
+				{
+					// Replace fog2 with the new volume
+					rp.fog2 = packed;
+				}
+			}
+		}
+	}
+}
+
+vec4
+trace_effects_ray(Ray ray, bool skip_procedural)
+{
+	uint rayFlags = 0;
+	if (skip_procedural)
+
+
+		rayFlags |= gl_RayFlagsSkipProceduralPrimitives;
+	
+	uint instance_mask = AS_FLAG_EFFECTS;
+
+	ray_payload_effects.transparency = uvec2(0);
+	ray_payload_effects.distances = 0;
+	ray_payload_effects.fog1 = uvec4(0);
+	ray_payload_effects.fog2 = uvec4(0);
+
+	if (!skip_procedural)
+		find_fog_volumes(ray_payload_effects, ray);
+
+#ifdef KHR_RAY_QUERY
+
+	rayQueryEXT rayQuery;
+	rayQueryInitializeEXT(rayQuery, topLevelAS[TLAS_INDEX_EFFECTS], rayFlags, instance_mask, 
+		ray.origin, ray.t_min, ray.direction, ray.t_max);
+
+	// Start traversal: return false if traversal is complete
+	while (rayQueryProceedEXT(rayQuery))
+	{
+		uint sbtOffset = rayQueryGetIntersectionInstanceShaderBindingTableRecordOffsetEXT(rayQuery, false);
+		int primitiveID = rayQueryGetIntersectionPrimitiveIndexEXT(rayQuery, false);
+		uint instanceCustomIndex = rayQueryGetIntersectionInstanceCustomIndexEXT(rayQuery, false);
+		float hitT = rayQueryGetIntersectionTEXT(rayQuery, false);
+		vec2 bary = rayQueryGetIntersectionBarycentricsEXT(rayQuery, false);
+		bool isProcedural = rayQueryGetIntersectionTypeEXT(rayQuery, false) == gl_RayQueryCandidateIntersectionAABBEXT;
+
+		vec4 transparent = vec4(0);
 
 		if (isProcedural)
 		{
@@ -313,7 +421,8 @@ trace_ray(Ray ray, bool cull_back_faces, int instance_mask, bool skip_procedural
 				// Then the any-hit shader.
 				if (intersectsWithBeam)
 				{
-					pt_logic_beam(ray_payload_brdf, primitiveID, beam_fade_and_thickness, tShapeHit);
+					transparent = pt_logic_beam(primitiveID, beam_fade_and_thickness, tShapeHit, ray.t_max);
+					hitT = tShapeHit;
 				}
 			}
 		}
@@ -321,48 +430,38 @@ trace_ray(Ray ray, bool cull_back_faces, int instance_mask, bool skip_procedural
 		{
 			switch(sbtOffset)
 			{
-
-			case SBTO_MASKED: // masked materials
-				if (pt_logic_masked(primitiveID, instanceCustomIndex, bary))
-					rayQueryConfirmIntersectionEXT(rayQuery);
-				break;
-
 			case SBTO_PARTICLE: // particles
-				pt_logic_particle(ray_payload_brdf, primitiveID, hitT, bary);
+				transparent = pt_logic_particle(primitiveID, bary);
 				break;
 
 			case SBTO_EXPLOSION: // explosions
-				pt_logic_explosion(ray_payload_brdf, primitiveID, instanceCustomIndex, hitT, ray.direction, bary);
+				transparent = pt_logic_explosion(primitiveID, instanceCustomIndex, ray.direction, bary);
 				break;
 
 			case SBTO_SPRITE: // sprites
-				pt_logic_sprite(ray_payload_brdf, primitiveID, hitT, bary);
+				transparent = pt_logic_sprite(primitiveID, bary);
 				break;
 			}
 		}
-	}
 
-	if (rayQueryGetIntersectionTypeEXT(rayQuery, true) == gl_RayQueryCommittedIntersectionTriangleEXT)
-	{
-		pt_logic_rchit(ray_payload_brdf, 
-			rayQueryGetIntersectionPrimitiveIndexEXT(rayQuery, true),
-			rayQueryGetIntersectionInstanceCustomIndexEXT(rayQuery, true),
-			rayQueryGetIntersectionTEXT(rayQuery, true),
-			rayQueryGetIntersectionBarycentricsEXT(rayQuery, true));
-	}
-	else
-	{
-		// miss
-		ray_payload_brdf.instance_prim = ~0u;
+		if (transparent.a > 0)
+		{
+			update_payload_transparency(ray_payload_effects, transparent, hitT);
+		}
 	}
 
 #else
 
-	traceRayEXT( topLevelAS, rayFlags, instance_mask,
-			SBT_RCHIT_OPAQUE /*sbtRecordOffset*/, 0 /*sbtRecordStride*/, SBT_RMISS_PATH_TRACER /*missIndex*/,
-			ray.origin, ray.t_min, ray.direction, ray.t_max, RT_PAYLOAD_BRDF);
+	traceRayEXT( topLevelAS[TLAS_INDEX_EFFECTS], rayFlags, instance_mask,
+			SBT_RCHIT_EFFECTS /*sbtRecordOffset*/, 0 /*sbtRecordStride*/, SBT_RMISS_EMPTY /*missIndex*/,
+			ray.origin, ray.t_min, ray.direction, ray.t_max, RT_PAYLOAD_EFFECTS);
 
 #endif
+
+	if (skip_procedural)
+		return get_payload_transparency(ray_payload_effects);
+
+	return get_payload_transparency_with_fog(ray_payload_effects, ray.t_max);
 }
 
 Ray get_shadow_ray(vec3 p1, vec3 p2, float tmin)
@@ -389,7 +488,7 @@ trace_shadow_ray(Ray ray, int cull_mask)
 #ifdef KHR_RAY_QUERY
 
 	rayQueryEXT rayQuery;
-	rayQueryInitializeEXT(rayQuery, topLevelAS, rayFlags, cull_mask, 
+	rayQueryInitializeEXT(rayQuery, topLevelAS[TLAS_INDEX_GEOMETRY], rayFlags, cull_mask, 
 		ray.origin, ray.t_min, ray.direction, ray.t_max);
 
 	while (rayQueryProceedEXT(rayQuery))
@@ -414,13 +513,15 @@ trace_shadow_ray(Ray ray, int cull_mask)
 
 #else
 
-	ray_payload_shadow.missed = 0;
+	ray_payload_geometry.barycentric = vec2(0);
+	ray_payload_geometry.instance_prim = ~0u;
+	ray_payload_geometry.hit_distance = -1;
 
-	traceRayEXT( topLevelAS, rayFlags, cull_mask,
-			SBT_RCHIT_EMPTY /*sbtRecordOffset*/, 0 /*sbtRecordStride*/, SBT_RMISS_SHADOW /*missIndex*/,
-			ray.origin, ray.t_min, ray.direction, ray.t_max, RT_PAYLOAD_SHADOW);
+	traceRayEXT( topLevelAS[TLAS_INDEX_GEOMETRY], rayFlags, cull_mask,
+			SBT_RCHIT_GEOMETRY /*sbtRecordOffset*/, 0 /*sbtRecordStride*/, SBT_RMISS_EMPTY /*missIndex*/,
+			ray.origin, ray.t_min, ray.direction, ray.t_max, RT_PAYLOAD_GEOMETRY);
 
-	return float(ray_payload_shadow.missed);
+	return found_intersection(ray_payload_geometry) ? 0.0 : 1.0;
 
 #endif
 }
@@ -428,14 +529,9 @@ trace_shadow_ray(Ray ray, int cull_mask)
 vec3
 trace_caustic_ray(Ray ray, int surface_medium)
 {
-	ray_payload_brdf.barycentric = vec2(0);
-	ray_payload_brdf.instance_prim = 0;
-	ray_payload_brdf.hit_distance = -1;
-	ray_payload_brdf.close_transparencies = uvec2(0);
-	ray_payload_brdf.farthest_transparency = uvec2(0);
-    ray_payload_brdf.closest_max_transparent_distance = 0;
-	ray_payload_brdf.farthest_transparent_distance = 0;
-	ray_payload_brdf.farthest_transparent_depth = 0;
+	ray_payload_geometry.barycentric = vec2(0);
+	ray_payload_geometry.instance_prim = ~0u;
+	ray_payload_geometry.hit_distance = -1;
 
 	uint rayFlags = gl_RayFlagsCullBackFacingTrianglesEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipProceduralPrimitives;
 	uint instance_mask = AS_FLAG_TRANSPARENT;
@@ -443,54 +539,49 @@ trace_caustic_ray(Ray ray, int surface_medium)
 #ifdef KHR_RAY_QUERY
 
 	rayQueryEXT rayQuery;
-	rayQueryInitializeEXT(rayQuery, topLevelAS, rayFlags, instance_mask, 
+	rayQueryInitializeEXT(rayQuery, topLevelAS[TLAS_INDEX_GEOMETRY], rayFlags, instance_mask, 
 		ray.origin, ray.t_min, ray.direction, ray.t_max);
 	
 	rayQueryProceedEXT(rayQuery);
 
 	if (rayQueryGetIntersectionTypeEXT(rayQuery, true) == gl_RayQueryCommittedIntersectionTriangleEXT)
 	{
-		pt_logic_rchit(ray_payload_brdf, 
+		pt_logic_rchit(ray_payload_geometry, 
 			rayQueryGetIntersectionPrimitiveIndexEXT(rayQuery, true),
 			rayQueryGetIntersectionInstanceCustomIndexEXT(rayQuery, true),
 			rayQueryGetIntersectionTEXT(rayQuery, true),
 			rayQueryGetIntersectionBarycentricsEXT(rayQuery, true));
 	}
-	else
-	{
-		// miss
-		ray_payload_brdf.instance_prim = ~0u;
-	}
 
 #else
 
-	traceRayEXT(topLevelAS, rayFlags, instance_mask, SBT_RCHIT_OPAQUE, 0, SBT_RMISS_PATH_TRACER,
-			ray.origin, ray.t_min, ray.direction, ray.t_max, RT_PAYLOAD_BRDF);
+	traceRayEXT(topLevelAS[TLAS_INDEX_GEOMETRY], rayFlags, instance_mask, SBT_RCHIT_GEOMETRY, 0, SBT_RMISS_EMPTY,
+			ray.origin, ray.t_min, ray.direction, ray.t_max, RT_PAYLOAD_GEOMETRY);
 
 #endif
 
 	float extinction_distance = ray.t_max - ray.t_min;
 	vec3 throughput = vec3(1);
 
-	if(found_intersection(ray_payload_brdf))
+	if(found_intersection(ray_payload_geometry))
 	{
-		Triangle triangle = get_hit_triangle(ray_payload_brdf);
+		Triangle triangle = get_hit_triangle(ray_payload_geometry);
 		
 		vec3 geo_normal = triangle.normals[0];
 		bool is_vertical = abs(geo_normal.z) < 0.1;
 
 		if((is_water(triangle.material_id) || is_slime(triangle.material_id)) && !is_vertical)
 		{
-			vec3 position = ray.origin + ray.direction * ray_payload_brdf.hit_distance;
+			vec3 position = ray.origin + ray.direction * ray_payload_geometry.hit_distance;
 			vec3 w = get_water_normal(triangle.material_id, geo_normal, triangle.tangents[0], position, true);
 
 			float caustic = clamp((1 - pow(clamp(1 - length(w.xz), 0, 1), 2)) * 100, 0, 8);
-			caustic = mix(1, caustic, clamp(ray_payload_brdf.hit_distance * 0.02, 0, 1));
+			caustic = mix(1, caustic, clamp(ray_payload_geometry.hit_distance * 0.02, 0, 1));
 			throughput = vec3(caustic);
 
 			if(surface_medium != MEDIUM_NONE)
 			{
-				extinction_distance = ray_payload_brdf.hit_distance;
+				extinction_distance = ray_payload_geometry.hit_distance;
 			}
 			else
 			{
@@ -499,22 +590,22 @@ trace_caustic_ray(Ray ray, int surface_medium)
 				else
 					surface_medium = MEDIUM_SLIME;
 
-				extinction_distance = max(0, ray.t_max - ray_payload_brdf.hit_distance);
+				extinction_distance = max(0, ray.t_max - ray_payload_geometry.hit_distance);
 			}
 		}
 		else if(is_glass(triangle.material_id) || is_water(triangle.material_id) && is_vertical)
 		{
-			vec3 bary = get_hit_barycentric(ray_payload_brdf);
+			vec3 bary = get_hit_barycentric(ray_payload_geometry);
 			vec2 tex_coord = triangle.tex_coords * bary;
 
 			MaterialInfo minfo = get_material_info(triangle.material_id);
 
-	    	vec3 albedo = global_textureLod(minfo.diffuse_texture, tex_coord, 2).rgb;
+	    	vec3 base_color = vec3(minfo.base_factor);
+	    	if (minfo.base_texture > 0)
+	    		base_color *= global_textureLod(minfo.base_texture, tex_coord, 2).rgb;
+	    	base_color = clamp(base_color, vec3(0), vec3(1));
 
-			if((triangle.material_id & MATERIAL_FLAG_CORRECT_ALBEDO) != 0)
-				albedo = correct_albedo(albedo);
-
-			throughput = albedo;
+			throughput = base_color;
 		}
 	}
 
@@ -559,10 +650,12 @@ get_direct_illumination(
 	uint material_id,
 	int shadow_cull_mask, 
 	vec3 view_direction, 
+	vec3 albedo,
+	vec3 base_reflectivity,
+	float specular_factor,
 	float roughness, 
 	int surface_medium, 
 	bool enable_caustics, 
-	float surface_specular, 
 	float direct_specular_weight, 
 	bool enable_polygonal,
 	bool enable_spherical,
@@ -583,7 +676,7 @@ get_direct_illumination(
 	float alpha = square(roughness);
 	float phong_exp = RoughnessSquareToSpecPower(alpha);
 	float phong_scale = min(100, 1 / (M_PI * square(alpha)));
-	float phong_weight = clamp(surface_specular * direct_specular_weight, 0, 0.9);
+	float phong_weight = clamp(specular_factor * luminance(base_reflectivity) / (luminance(base_reflectivity) + luminance(albedo)), 0, 0.9);
 
 	int polygonal_light_index = -1;
 	float polygonal_light_pdfw = 0;
@@ -698,7 +791,7 @@ get_direct_illumination(
 	if(null_light)
 		return;
 
-	diffuse = vis * contrib;
+	vec3 radiance = vis * contrib;
 
 	vec3 L = pos_on_light - position;
 	L = normalize(L);
@@ -714,14 +807,19 @@ get_direct_illumination(
 			normal, -view_direction, L, polygonal_light_pdfw);
 	}
 
+	vec3 F = vec3(0);
+
 	if(vis > 0 && direct_specular_weight > 0)
 	{
-		specular = diffuse * (GGX(view_direction, normalize(pos_on_light - position), normal, roughness, 0.0) * direct_specular_weight);
+		vec3 specular_brdf = GGX_times_NdotL(view_direction, normalize(pos_on_light - position),
+			normal, roughness, base_reflectivity, 0.0, specular_factor, F);
+		specular = radiance * specular_brdf * direct_specular_weight;
 	}
 
 	float NdotL = max(0, dot(normal, L));
 
-	diffuse *= NdotL / M_PI;
+	float diffuse_brdf = NdotL / M_PI;
+	diffuse = radiance * diffuse_brdf * (vec3(1.0) - F);
 }
 
 void
@@ -732,6 +830,8 @@ get_sunlight(
 	vec3 normal, 
 	vec3 geo_normal, 
 	vec3 view_direction, 
+	vec3 base_reflectivity,
+	float specular_factor,
 	float roughness, 
 	int surface_medium, 
 	bool enable_caustics, 
@@ -778,27 +878,32 @@ get_sunlight(
 	
     vec3 envmap = textureLod(TEX_PHYSICAL_SKY, envmap_direction.xzy, 0).rgb;
 
-    diffuse = (global_ubo.sun_solid_angle * global_ubo.pt_env_scale) * envmap;
+    vec3 radiance = (global_ubo.sun_solid_angle * global_ubo.pt_env_scale) * envmap;
 #else
     // Fetch the average sun color from the resolved UBO - it's faster.
 
-    diffuse = sun_color_ubo.sun_color;
+    vec3 radiance = sun_color_ubo.sun_color;
 #endif
 
 #ifdef ENABLE_SHADOW_CAUSTICS
 	if(enable_caustics)
 	{
-    	diffuse *= trace_caustic_ray(shadow_ray, surface_medium);
+    	radiance *= trace_caustic_ray(shadow_ray, surface_medium);
 	}
 #endif
+
+	vec3 F = vec3(0);
 
     if(global_ubo.pt_sun_specular > 0)
     {
 		float NoH_offset = 0.5 * square(global_ubo.sun_tan_half_angle);
-    	specular = diffuse * GGX(view_direction, global_ubo.sun_direction, normal, roughness, NoH_offset);
+		vec3 specular_brdf = GGX_times_NdotL(view_direction, global_ubo.sun_direction,
+			normal,roughness, base_reflectivity, NoH_offset, specular_factor, F);
+    	specular = radiance * specular_brdf;
 	}
 
-	diffuse *= NdotL / M_PI;
+	float diffuse_brdf = NdotL / M_PI;
+	diffuse = radiance * diffuse_brdf * (vec3(1.0) - F);
 }
 
 vec3 clamp_output(vec3 c)
@@ -865,27 +970,39 @@ bool get_is_gradient(ivec2 ipos)
 
 
 void
-get_material(Triangle triangle, vec3 bary, vec2 tex_coord, vec2 tex_coord_x, vec2 tex_coord_y, float mip_level, vec3 geo_normal,
-    out vec3 albedo, out vec3 normal, out float metallic, out float specular, out float roughness, out vec3 emissive)
+get_material(
+	Triangle triangle,
+	vec3 bary,
+	vec2 tex_coord,
+	vec2 tex_coord_x,
+	vec2 tex_coord_y,
+	float mip_level,
+	vec3 geo_normal,
+    out vec3 base_color,
+    out vec3 normal,
+    out float metallic,
+    out float roughness,
+    out vec3 emissive,
+    out float specular_factor)
 {
 	MaterialInfo minfo = get_material_info(triangle.material_id);
 
 	perturb_tex_coord(triangle.material_id, global_ubo.time, tex_coord);	
 
-    vec4 image1;
-	if (mip_level >= 0)
-	    image1 = global_textureLod(minfo.diffuse_texture, tex_coord, mip_level);
-	else
-	    image1 = global_textureGrad(minfo.diffuse_texture, tex_coord, tex_coord_x, tex_coord_y);
+    vec4 image1 = vec4(1);
+    if (minfo.base_texture != 0)
+    {
+		if (mip_level >= 0)
+		    image1 = global_textureLod(minfo.base_texture, tex_coord, mip_level);
+		else
+		    image1 = global_textureGrad(minfo.base_texture, tex_coord, tex_coord_x, tex_coord_y);
+	}
 
-	if((triangle.material_id & MATERIAL_FLAG_CORRECT_ALBEDO) != 0)
-		albedo = correct_albedo(image1.rgb);
-	else
-		albedo = image1.rgb;
+	base_color = image1.rgb * minfo.base_factor;
+	base_color = clamp(base_color, vec3(0), vec3(1));
 
 	normal = geo_normal;
 	metallic = 0;
-    specular = 0;
     roughness = 1;
 
     if (minfo.normals_texture != 0)
@@ -946,8 +1063,9 @@ get_material(Triangle triangle, vec3 bary, vec2 tex_coord, vec2 tex_coord_x, vec
 
     if(global_ubo.pt_roughness_override >= 0) roughness = global_ubo.pt_roughness_override;
     if(global_ubo.pt_metallic_override >= 0) metallic = global_ubo.pt_metallic_override;
-
-	specular = mix(0.05, 1.0, metallic);
+    
+    // The specular factor parameter should only affect dielectrics, so make it 1.0 for metals
+    specular_factor = mix(minfo.specular_factor, 1.0, metallic);
 
 	if (triangle.emissive_factor > 0)
 	{
@@ -957,7 +1075,7 @@ get_material(Triangle triangle, vec3 bary, vec2 tex_coord, vec2 tex_coord_x, vec
 	else
 		emissive = vec3(0);
 
-    emissive += get_emissive_shell(triangle.material_id) * albedo * (1 - metallic * 0.9);
+    emissive += get_emissive_shell(triangle.material_id) * base_color * (1 - metallic * 0.9);
 }
 
 bool get_camera_uv(vec2 tex_coord, out vec2 cameraUV)

@@ -95,6 +95,10 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	SHADER_MODULE_DO(QVK_MOD_GOD_RAYS_FILTER_COMP)                   \
 	SHADER_MODULE_DO(QVK_MOD_SHADOW_MAP_VERT)                        \
 	SHADER_MODULE_DO(QVK_MOD_COMPOSITING_COMP)                       \
+	SHADER_MODULE_DO(QVK_MOD_FSR_EASU_FP16_COMP)                     \
+	SHADER_MODULE_DO(QVK_MOD_FSR_EASU_FP32_COMP)                     \
+	SHADER_MODULE_DO(QVK_MOD_FSR_RCAS_FP16_COMP)                     \
+	SHADER_MODULE_DO(QVK_MOD_FSR_RCAS_FP32_COMP)                     \
 
 #define LIST_RT_RGEN_SHADER_MODULES \
 	SHADER_MODULE_DO(QVK_MOD_PRIMARY_RAYS_RGEN)                      \
@@ -109,7 +113,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 	SHADER_MODULE_DO(QVK_MOD_PATH_TRACER_BEAM_RAHIT)                 \
 	SHADER_MODULE_DO(QVK_MOD_PATH_TRACER_BEAM_RINT)                  \
 	SHADER_MODULE_DO(QVK_MOD_PATH_TRACER_RMISS)                      \
-	SHADER_MODULE_DO(QVK_MOD_PATH_TRACER_SHADOW_RMISS)               \
 	SHADER_MODULE_DO(QVK_MOD_PATH_TRACER_EXPLOSION_RAHIT)            \
 	SHADER_MODULE_DO(QVK_MOD_PATH_TRACER_SPRITE_RAHIT)               \
 
@@ -194,6 +197,7 @@ typedef struct QVK_s {
 	
 	qboolean                    use_ray_query;
 	qboolean                    enable_validation;
+	qboolean                    supports_fp16;
 
 	cmd_buf_group_t             cmd_buffers_graphics;
 	cmd_buf_group_t             cmd_buffers_transfer;
@@ -363,6 +367,7 @@ typedef struct bsp_mesh_s {
 	uint32_t world_custom_sky_count;
 
 	float *positions, *tex_coords;
+	uint32_t* normals;
 	uint32_t* tangents;
 	int *indices;
 	uint32_t *materials;
@@ -457,6 +462,9 @@ void create_orthographic_matrix(mat4_t matrix, float xmin, float xmax,
 	PROFILER_DO(PROFILER_ASVGF_TAA,                  2) \
 	PROFILER_DO(PROFILER_BLOOM,                      1) \
 	PROFILER_DO(PROFILER_TONE_MAPPING,               1) \
+	PROFILER_DO(PROFILER_FSR,                        1) \
+	PROFILER_DO(PROFILER_FSR_EASU,                   2) \
+	PROFILER_DO(PROFILER_FSR_RCAS,                   2) \
 	PROFILER_DO(PROFILER_UPDATE_ENVIRONMENT,         1) \
 	PROFILER_DO(PROFILER_GOD_RAYS,                   1) \
 	PROFILER_DO(PROFILER_GOD_RAYS_REFLECT_REFRACT,   1) \
@@ -576,7 +584,7 @@ VkResult vkpt_draw_destroy();
 VkResult vkpt_draw_destroy_pipelines();
 VkResult vkpt_draw_create_pipelines();
 VkResult vkpt_draw_submit_stretch_pics(VkCommandBuffer cmd_buf);
-VkResult vkpt_final_blit_simple(VkCommandBuffer cmd_buf);
+VkResult vkpt_final_blit_simple(VkCommandBuffer cmd_buf, VkImage image, VkExtent2D extent);
 VkResult vkpt_final_blit_filtered(VkCommandBuffer cmd_buf);
 VkResult vkpt_draw_clear_stretch_pics();
 
@@ -628,6 +636,17 @@ VkResult vkpt_compositing(VkCommandBuffer cmd_buf);
 VkResult vkpt_interleave(VkCommandBuffer cmd_buf);
 VkResult vkpt_taa(VkCommandBuffer cmd_buf);
 VkResult vkpt_asvgf_gradient_reproject(VkCommandBuffer cmd_buf);
+
+void vkpt_fsr_init_cvars();
+VkResult vkpt_fsr_initialize();
+VkResult vkpt_fsr_destroy();
+VkResult vkpt_fsr_create_pipelines();
+VkResult vkpt_fsr_destroy_pipelines();
+qboolean vkpt_fsr_is_enabled();
+qboolean vkpt_fsr_needs_upscale();
+void vkpt_fsr_update_ubo(QVKUniformBuffer_t *ubo);
+VkResult vkpt_fsr_do(VkCommandBuffer cmd_buf);
+VkResult vkpt_fsr_final_blit(VkCommandBuffer cmd_buf);
 
 VkResult vkpt_bloom_initialize();
 VkResult vkpt_bloom_destroy();
