@@ -36,7 +36,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #define MIN_CHANNELS 16
 
 int active_buffers = 0;
-qboolean streamPlaying = qfalse;
+bool streamPlaying = false;
 static ALuint s_srcnums[MAX_CHANNELS];
 static ALuint streamSource = 0;
 static int s_framecount;
@@ -86,7 +86,7 @@ AL_StreamDie(void)
 {
 	int numBuffers;
 
-	streamPlaying = qfalse;
+	streamPlaying = false;
 	qalSourceStop(streamSource);
 
 	/* Un-queue any buffers, and delete them */
@@ -119,7 +119,7 @@ AL_StreamUpdate(void)
 
 	if (state == AL_STOPPED)
 	{
-		streamPlaying = qfalse;
+		streamPlaying = false;
 	}
 	else
 	{
@@ -141,341 +141,11 @@ AL_StreamUpdate(void)
 	if (!streamPlaying && numBuffers)
 	{
 		qalSourcePlay(streamSource);
-		streamPlaying = qtrue;
+		streamPlaying = true;
 	}
 }
 
-EFXEAXREVERBPROPERTIES ReverbPresets[113] = {
-	EFX_REVERB_PRESET_GENERIC,
-	EFX_REVERB_PRESET_PADDEDCELL,
-	EFX_REVERB_PRESET_ROOM,
-	EFX_REVERB_PRESET_BATHROOM,
-	EFX_REVERB_PRESET_LIVINGROOM,
-	EFX_REVERB_PRESET_STONEROOM,
-	EFX_REVERB_PRESET_AUDITORIUM,
-	EFX_REVERB_PRESET_CONCERTHALL,
-	EFX_REVERB_PRESET_CAVE,
-	EFX_REVERB_PRESET_ARENA,
-	EFX_REVERB_PRESET_HANGAR,
-	EFX_REVERB_PRESET_CARPETEDHALLWAY,
-	EFX_REVERB_PRESET_HALLWAY,
-	EFX_REVERB_PRESET_STONECORRIDOR,
-	EFX_REVERB_PRESET_ALLEY,
-	EFX_REVERB_PRESET_FOREST,
-	EFX_REVERB_PRESET_CITY,
-	EFX_REVERB_PRESET_MOUNTAINS,
-	EFX_REVERB_PRESET_QUARRY,
-	EFX_REVERB_PRESET_PLAIN,
-	EFX_REVERB_PRESET_PARKINGLOT,
-	EFX_REVERB_PRESET_SEWERPIPE,
-	EFX_REVERB_PRESET_UNDERWATER,
-	EFX_REVERB_PRESET_DRUGGED,
-	EFX_REVERB_PRESET_DIZZY,
-	EFX_REVERB_PRESET_PSYCHOTIC,
-	EFX_REVERB_PRESET_CASTLE_SMALLROOM,
-	EFX_REVERB_PRESET_CASTLE_SHORTPASSAGE,
-	EFX_REVERB_PRESET_CASTLE_MEDIUMROOM,
-	EFX_REVERB_PRESET_CASTLE_LARGEROOM,
-	EFX_REVERB_PRESET_CASTLE_LONGPASSAGE,
-	EFX_REVERB_PRESET_CASTLE_HALL,
-	EFX_REVERB_PRESET_CASTLE_CUPBOARD,
-	EFX_REVERB_PRESET_CASTLE_COURTYARD,
-	EFX_REVERB_PRESET_CASTLE_ALCOVE,
-	EFX_REVERB_PRESET_FACTORY_SMALLROOM,
-	EFX_REVERB_PRESET_FACTORY_SHORTPASSAGE,
-	EFX_REVERB_PRESET_FACTORY_MEDIUMROOM,
-	EFX_REVERB_PRESET_FACTORY_LARGEROOM,
-	EFX_REVERB_PRESET_FACTORY_LONGPASSAGE,
-	EFX_REVERB_PRESET_FACTORY_HALL,
-	EFX_REVERB_PRESET_FACTORY_CUPBOARD,
-	EFX_REVERB_PRESET_FACTORY_COURTYARD,
-	EFX_REVERB_PRESET_FACTORY_ALCOVE,
-	EFX_REVERB_PRESET_ICEPALACE_SMALLROOM,
-	EFX_REVERB_PRESET_ICEPALACE_SHORTPASSAGE,
-	EFX_REVERB_PRESET_ICEPALACE_MEDIUMROOM,
-	EFX_REVERB_PRESET_ICEPALACE_LARGEROOM,
-	EFX_REVERB_PRESET_ICEPALACE_LONGPASSAGE,
-	EFX_REVERB_PRESET_ICEPALACE_HALL,
-	EFX_REVERB_PRESET_ICEPALACE_CUPBOARD,
-	EFX_REVERB_PRESET_ICEPALACE_COURTYARD,
-	EFX_REVERB_PRESET_ICEPALACE_ALCOVE,
-	EFX_REVERB_PRESET_SPACESTATION_SMALLROOM,
-	EFX_REVERB_PRESET_SPACESTATION_SHORTPASSAGE,
-	EFX_REVERB_PRESET_SPACESTATION_MEDIUMROOM,
-	EFX_REVERB_PRESET_SPACESTATION_LARGEROOM,
-	EFX_REVERB_PRESET_SPACESTATION_LONGPASSAGE,
-	EFX_REVERB_PRESET_SPACESTATION_HALL,
-	EFX_REVERB_PRESET_SPACESTATION_CUPBOARD,
-	EFX_REVERB_PRESET_SPACESTATION_ALCOVE,
-	EFX_REVERB_PRESET_WOODEN_SMALLROOM,
-	EFX_REVERB_PRESET_WOODEN_SHORTPASSAGE,
-	EFX_REVERB_PRESET_WOODEN_MEDIUMROOM,
-	EFX_REVERB_PRESET_WOODEN_LARGEROOM,
-	EFX_REVERB_PRESET_WOODEN_LONGPASSAGE,
-	EFX_REVERB_PRESET_WOODEN_HALL,
-	EFX_REVERB_PRESET_WOODEN_CUPBOARD,
-	EFX_REVERB_PRESET_WOODEN_COURTYARD,
-	EFX_REVERB_PRESET_WOODEN_ALCOVE,
-	EFX_REVERB_PRESET_SPORT_EMPTYSTADIUM,
-	EFX_REVERB_PRESET_SPORT_SQUASHCOURT,
-	EFX_REVERB_PRESET_SPORT_SMALLSWIMMINGPOOL,
-	EFX_REVERB_PRESET_SPORT_LARGESWIMMINGPOOL,
-	EFX_REVERB_PRESET_SPORT_GYMNASIUM,
-	EFX_REVERB_PRESET_SPORT_FULLSTADIUM,
-	EFX_REVERB_PRESET_SPORT_STADIUMTANNOY,
-	EFX_REVERB_PRESET_PREFAB_WORKSHOP,
-	EFX_REVERB_PRESET_PREFAB_SCHOOLROOM,
-	EFX_REVERB_PRESET_PREFAB_PRACTISEROOM,
-	EFX_REVERB_PRESET_PREFAB_OUTHOUSE,
-	EFX_REVERB_PRESET_PREFAB_CARAVAN,
-	EFX_REVERB_PRESET_DOME_TOMB,
-	EFX_REVERB_PRESET_PIPE_SMALL,
-	EFX_REVERB_PRESET_DOME_SAINTPAULS,
-	EFX_REVERB_PRESET_PIPE_LONGTHIN,
-	EFX_REVERB_PRESET_PIPE_LARGE,
-	EFX_REVERB_PRESET_PIPE_RESONANT,
-	EFX_REVERB_PRESET_OUTDOORS_BACKYARD,
-	EFX_REVERB_PRESET_OUTDOORS_ROLLINGPLAINS,
-	EFX_REVERB_PRESET_OUTDOORS_DEEPCANYON,
-	EFX_REVERB_PRESET_OUTDOORS_CREEK,
-	EFX_REVERB_PRESET_OUTDOORS_VALLEY,
-	EFX_REVERB_PRESET_MOOD_HEAVEN,
-	EFX_REVERB_PRESET_MOOD_HELL,
-	EFX_REVERB_PRESET_MOOD_MEMORY,
-	EFX_REVERB_PRESET_DRIVING_COMMENTATOR,
-	EFX_REVERB_PRESET_DRIVING_PITGARAGE,
-	EFX_REVERB_PRESET_DRIVING_INCAR_RACER,
-	EFX_REVERB_PRESET_DRIVING_INCAR_SPORTS,
-	EFX_REVERB_PRESET_DRIVING_INCAR_LUXURY,
-	EFX_REVERB_PRESET_DRIVING_FULLGRANDSTAND,
-	EFX_REVERB_PRESET_DRIVING_EMPTYGRANDSTAND,
-	EFX_REVERB_PRESET_DRIVING_TUNNEL,
-	EFX_REVERB_PRESET_CITY_STREETS,
-	EFX_REVERB_PRESET_CITY_SUBWAY,
-	EFX_REVERB_PRESET_CITY_MUSEUM,
-	EFX_REVERB_PRESET_CITY_LIBRARY,
-	EFX_REVERB_PRESET_CITY_UNDERPASS,
-	EFX_REVERB_PRESET_CITY_ABANDONED,
-	EFX_REVERB_PRESET_DUSTYROOM,
-	EFX_REVERB_PRESET_CHAPEL,
-	EFX_REVERB_PRESET_SMALLWATERROOM
-};
-
-char ReverbPresetsNames[113][31] = {
-	"GENERIC",
-	"PADDEDCELL",
-	"ROOM",
-	"BATHROOM",
-	"LIVINGROOM",
-	"STONEROOM",
-	"AUDITORIUM",
-	"CONCERTHALL",
-	"CAVE",
-	"ARENA",
-	"HANGAR",
-	"CARPETEDHALLWAY",
-	"HALLWAY",
-	"STONECORRIDOR",
-	"ALLEY",
-	"FOREST",
-	"CITY",
-	"MOUNTAINS",
-	"QUARRY",
-	"PLAIN",
-	"PARKINGLOT",
-	"SEWERPIPE",
-	"UNDERWATER",
-	"DRUGGED",
-	"DIZZY",
-	"PSYCHOTIC",
-	"CASTLE_SMALLROOM",
-	"CASTLE_SHORTPASSAGE",
-	"CASTLE_MEDIUMROOM",
-	"CASTLE_LARGEROOM",
-	"CASTLE_LONGPASSAGE",
-	"CASTLE_HALL",
-	"CASTLE_CUPBOARD",
-	"CASTLE_COURTYARD",
-	"CASTLE_ALCOVE",
-	"FACTORY_SMALLROOM",
-	"FACTORY_SHORTPASSAGE",
-	"FACTORY_MEDIUMROOM",
-	"FACTORY_LARGEROOM",
-	"FACTORY_LONGPASSAGE",
-	"FACTORY_HALL",
-	"FACTORY_CUPBOARD",
-	"FACTORY_COURTYARD",
-	"FACTORY_ALCOVE",
-	"ICEPALACE_SMALLROOM",
-	"ICEPALACE_SHORTPASSAGE",
-	"ICEPALACE_MEDIUMROOM",
-	"ICEPALACE_LARGEROOM",
-	"ICEPALACE_LONGPASSAGE",
-	"ICEPALACE_HALL",
-	"ICEPALACE_CUPBOARD",
-	"ICEPALACE_COURTYARD",
-	"ICEPALACE_ALCOVE",
-	"SPACESTATION_SMALLROOM",
-	"SPACESTATION_SHORTPASSAGE",
-	"SPACESTATION_MEDIUMROOM",
-	"SPACESTATION_LARGEROOM",
-	"SPACESTATION_LONGPASSAGE",
-	"SPACESTATION_HALL",
-	"SPACESTATION_CUPBOARD",
-	"SPACESTATION_ALCOVE",
-	"WOODEN_SMALLROOM",
-	"WOODEN_SHORTPASSAGE",
-	"WOODEN_MEDIUMROOM",
-	"WOODEN_LARGEROOM",
-	"WOODEN_LONGPASSAGE",
-	"WOODEN_HALL",
-	"WOODEN_CUPBOARD",
-	"WOODEN_COURTYARD",
-	"WOODEN_ALCOVE",
-	"SPORT_EMPTYSTADIUM",
-	"SPORT_SQUASHCOURT",
-	"SPORT_SMALLSWIMMINGPOOL",
-	"SPORT_LARGESWIMMINGPOOL",
-	"SPORT_GYMNASIUM",
-	"SPORT_FULLSTADIUM",
-	"SPORT_STADIUMTANNOY",
-	"PREFAB_WORKSHOP",
-	"PREFAB_SCHOOLROOM",
-	"PREFAB_PRACTISEROOM",
-	"PREFAB_OUTHOUSE",
-	"PREFAB_CARAVAN",
-	"DOME_TOMB",
-	"PIPE_SMALL",
-	"DOME_SAINTPAULS",
-	"PIPE_LONGTHIN",
-	"PIPE_LARGE",
-	"PIPE_RESONANT",
-	"OUTDOORS_BACKYARD",
-	"OUTDOORS_ROLLINGPLAINS",
-	"OUTDOORS_DEEPCANYON",
-	"OUTDOORS_CREEK",
-	"OUTDOORS_VALLEY",
-	"MOOD_HEAVEN",
-	"MOOD_HELL",
-	"MOOD_MEMORY",
-	"DRIVING_COMMENTATOR",
-	"DRIVING_PITGARAGE",
-	"DRIVING_INCAR_RACER",
-	"DRIVING_INCAR_SPORTS",
-	"DRIVING_INCAR_LUXURY",
-	"DRIVING_FULLGRANDSTAND",
-	"DRIVING_EMPTYGRANDSTAND",
-	"DRIVING_TUNNEL",
-	"CITY_STREETS",
-	"CITY_SUBWAY",
-	"CITY_MUSEUM",
-	"CITY_LIBRARY",
-	"CITY_UNDERPASS",
-	"CITY_ABANDONED",
-	"DUSTYROOM",
-	"CHAPEL",
-	"SMALLWATERROOM"
-};
-
-void SetReverb(int index, int concalled)
-{
-	EFXEAXREVERBPROPERTIES reverb = ReverbPresets[index];
-
-	if (concalled)
-		Com_Printf("Reverb set to: %s\n", ReverbPresetsNames[index]);
-
-	qalEffectf(ReverbEffect, AL_REVERB_DENSITY, reverb.flDensity);
-	qalEffectf(ReverbEffect, AL_REVERB_DIFFUSION, reverb.flDiffusion);
-	qalEffectf(ReverbEffect, AL_REVERB_GAIN, reverb.flGain);
-	qalEffectf(ReverbEffect, AL_REVERB_GAINHF, reverb.flGainHF);
-	qalEffectf(ReverbEffect, AL_REVERB_DECAY_TIME, reverb.flDecayTime);
-	qalEffectf(ReverbEffect, AL_REVERB_DECAY_HFRATIO, reverb.flDecayHFRatio);
-	qalEffectf(ReverbEffect, AL_REVERB_REFLECTIONS_GAIN, reverb.flReflectionsGain);
-	qalEffectf(ReverbEffect, AL_REVERB_REFLECTIONS_DELAY, reverb.flReflectionsDelay);
-	qalEffectf(ReverbEffect, AL_REVERB_LATE_REVERB_GAIN, reverb.flLateReverbGain);
-	qalEffectf(ReverbEffect, AL_REVERB_LATE_REVERB_DELAY, reverb.flLateReverbDelay);
-	qalEffectf(ReverbEffect, AL_REVERB_AIR_ABSORPTION_GAINHF, reverb.flAirAbsorptionGainHF);
-	qalEffectf(ReverbEffect, AL_REVERB_ROOM_ROLLOFF_FACTOR, reverb.flRoomRolloffFactor);
-	qalEffecti(ReverbEffect, AL_REVERB_DECAY_HFLIMIT, reverb.iDecayHFLimit);
-
-	qalAuxiliaryEffectSloti(ReverbEffectSlot, AL_EFFECTSLOT_EFFECT, ReverbEffect);
-}
-
-void AL_InitReverbEffect(void)
-{
-	if (!(qalGenEffects && qalEffecti && qalEffectf && qalDeleteEffects && qalGenAuxiliaryEffectSlots && qalAuxiliaryEffectSloti))
-		return;
-
-	ReverbEffect = 0;
-	qalGenEffects(1, &ReverbEffect);
-
-	if (qalGetError() != AL_NO_ERROR)
-	{
-		Com_Printf("Couldn't generate an OpenAL effect!\n");
-		return;
-	}
-
-	ReverbEffectSlot = 0;
-	qalGenAuxiliaryEffectSlots(1, &ReverbEffectSlot);
-	qalEffecti(ReverbEffect, AL_EFFECT_TYPE, AL_EFFECT_REVERB);
-	SetReverb(s_reverb_preset->integer, 0);
-}
-
-void UpdateReverb(void)
-{
-	static vec3_t mins = { 0, 0, 0 }, maxs = { 0, 0, 0 };
-	vec3_t forward = { 1000000, 0, 0 };
-	vec3_t backward = { -1000000, 0, 0 };
-	vec3_t left = { 0, 1000000, 0 };
-	vec3_t right = { 0, -1000000, 0 };
-	vec3_t up = { 0, 0, 1000000 };
-	trace_t trace1, trace2, trace3, trace4, trace5;
-	vec3_t length1, length2, length3, length4, length5;
-	float dist1, dist2, dist3, dist4, dist5, average;
-
-	if (ReverbEffect == 0)
-		return;
-
-	CM_BoxTrace(&trace1, listener_origin, up, mins, maxs, cl.bsp->nodes, MASK_DEADSOLID);
-	CM_BoxTrace(&trace2, listener_origin, forward, mins, maxs, cl.bsp->nodes, MASK_DEADSOLID);
-	CM_BoxTrace(&trace3, listener_origin, backward, mins, maxs, cl.bsp->nodes, MASK_DEADSOLID);
-	CM_BoxTrace(&trace4, listener_origin, left, mins, maxs, cl.bsp->nodes, MASK_DEADSOLID);
-	CM_BoxTrace(&trace5, listener_origin, right, mins, maxs, cl.bsp->nodes, MASK_DEADSOLID);
-
-	VectorSubtract(trace1.endpos, listener_origin, length1);
-	VectorSubtract(trace2.endpos, listener_origin, length2);
-	VectorSubtract(trace3.endpos, listener_origin, length3);
-	VectorSubtract(trace4.endpos, listener_origin, length4);
-	VectorSubtract(trace5.endpos, listener_origin, length5);
-
-	dist1 = VectorLength(length1);
-	dist2 = VectorLength(length2);
-	dist3 = VectorLength(length3);
-	dist4 = VectorLength(length4);
-	dist5 = VectorLength(length5);
-
-	average = (dist1 + dist2 + dist3 + dist4 + dist5) / 5;
-
-	if (average < 100)
-		SetReverb(41, 0);
-
-	if (average > 100 && average < 200)
-		SetReverb(26, 0);
-
-	if (average > 200 && average < 330)
-		SetReverb(5, 0);
-
-	if (average > 330 && average < 450)
-		SetReverb(12, 0);
-
-	if (average > 450 && average < 650)
-		SetReverb(18, 0);
-
-	if (average > 650)
-		SetReverb(17, 0);
-}
-
-qboolean AL_Init(void)
+bool AL_Init(void)
 {
     int i;
 
@@ -499,7 +169,7 @@ qboolean AL_Init(void)
 	{
 		Com_Printf("ERROR: Couldn't get a single Source.\n");
 		QAL_Shutdown();
-		return qfalse;
+		return false;
 	}
 	else
 	{
@@ -534,13 +204,13 @@ qboolean AL_Init(void)
     // End From.
 
     Com_Printf("OpenAL initialized.\n");
-    return qtrue;
+    return true;
 
 fail1:
     QAL_Shutdown();
 fail0:
     Com_EPrintf("Failed to initialize OpenAL: %s\n", Com_GetLastError());
-    return qfalse;
+    return false;
 }
 
 void AL_Shutdown(void)
@@ -852,7 +522,7 @@ static void AL_AddLoopSounds(void)
 
         ch2 = AL_FindLoopingSound(0, sfx);
 
-        ch->autosound = qtrue;  // remove next frame
+        ch->autosound = true;   // remove next frame
         ch->autoframe = s_framecount;
         ch->sfx = sfx;
         ch->entnum = ent->number;

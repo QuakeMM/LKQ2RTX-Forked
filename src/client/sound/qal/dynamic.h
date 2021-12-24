@@ -17,8 +17,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 */
 
 #define AL_NO_PROTOTYPES
+
+#ifdef __APPLE__
+#include <OpenAL/al.h>
+#else
 #include <AL/al.h>
-#include <AL/alc.h>
+#endif
 
 #ifndef AL_SOFT_loop_points
 #define AL_SOFT_loop_points 1
@@ -117,6 +121,6 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 QAL_IMP
 #undef QAL
 
-qboolean QAL_Init(void);
+bool QAL_Init(void);
 void QAL_Shutdown(void);
 void QALC_PrintExtensions(void); // From SacikPL
