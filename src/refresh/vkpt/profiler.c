@@ -27,10 +27,11 @@ static uint64_t query_pool_results[NUM_PROFILER_QUERIES_PER_FRAME * 2];
 // causing vkGetQueryPoolResults to stop writing the results halfway through 
 // the buffer if it's properly sized.
 
+extern cvar_t *cvar_profiler_scale;
 extern cvar_t *cvar_pt_reflect_refract;
 extern cvar_t *cvar_flt_fsr_enable;
 
-static qboolean profiler_queries_used[NUM_PROFILER_QUERIES_PER_FRAME * MAX_FRAMES_IN_FLIGHT] = { 0 };
+static bool profiler_queries_used[NUM_PROFILER_QUERIES_PER_FRAME * MAX_FRAMES_IN_FLIGHT] = { 0 };
 
 VkResult
 vkpt_profiler_initialize()
@@ -66,7 +67,7 @@ vkpt_profiler_query(VkCommandBuffer cmd_buf, int idx, VKPTProfilerAction action)
 
 	set_current_gpu(cmd_buf, ALL_GPUS);
 
-	profiler_queries_used[idx] = qtrue;
+	profiler_queries_used[idx] = true;
 
 	return VK_SUCCESS;
 }
@@ -74,13 +75,13 @@ vkpt_profiler_query(VkCommandBuffer cmd_buf, int idx, VKPTProfilerAction action)
 VkResult
 vkpt_profiler_next_frame(VkCommandBuffer cmd_buf)
 {
-	qboolean any_queries_used = qfalse;
+	bool any_queries_used = false;
 
 	for (int idx = 0; idx < NUM_PROFILER_QUERIES_PER_FRAME; idx++)
 	{
 		if (profiler_queries_used[idx + qvk.current_frame_index * NUM_PROFILER_QUERIES_PER_FRAME])
 		{
-			any_queries_used = qtrue;
+			any_queries_used = true;
 			break;
 		}
 	}
@@ -98,7 +99,7 @@ vkpt_profiler_next_frame(VkCommandBuffer cmd_buf)
 		if (result != VK_SUCCESS && result != VK_NOT_READY)
 		{
 			Com_EPrintf("Failed call to vkGetQueryPoolResults, error code = %d\n", result);
-			any_queries_used = qfalse;
+			any_queries_used = false;
 		}
 	}
 
@@ -119,7 +120,7 @@ vkpt_profiler_next_frame(VkCommandBuffer cmd_buf)
 			NUM_PROFILER_QUERIES_PER_FRAME * qvk.current_frame_index, 
 			NUM_PROFILER_QUERIES_PER_FRAME);
 
-	memset(profiler_queries_used + qvk.current_frame_index * NUM_PROFILER_QUERIES_PER_FRAME, 0, sizeof(qboolean) * NUM_PROFILER_QUERIES_PER_FRAME);
+	memset(profiler_queries_used + qvk.current_frame_index * NUM_PROFILER_QUERIES_PER_FRAME, 0, sizeof(bool) * NUM_PROFILER_QUERIES_PER_FRAME);
 
 	return VK_SUCCESS;
 }
@@ -147,13 +148,16 @@ draw_query(int x, int y, qhandle_t font, const char *enum_name, int idx)
 void
 draw_profiler(int enable_asvgf)
 {
-	int x = 500;
-	int y = 100;
+	float profiler_scale = R_ClampScale(cvar_profiler_scale);
+	int x = 500 * profiler_scale;
+	int y = 100 * profiler_scale;
 
 	qhandle_t font;
 	font = R_RegisterFont("conchars");
 	if(!font)
 		return;
+
+	R_SetScale(profiler_scale);
 
 #define PROFILER_DO(name, indent) \
 	draw_query(x, y, font, &#name[9], name); y += 10;
@@ -200,6 +204,8 @@ draw_profiler(int enable_asvgf)
 		PROFILER_DO(PROFILER_FSR_RCAS, 2);
 	}
 #undef PROFILER_DO
+
+	R_SetScale(1.0f);
 }
 
 double vkpt_get_profiler_result(int idx)

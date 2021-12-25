@@ -22,7 +22,12 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include "common/common.h"
 #include "common/files.h"
 #include "dynamic.h"
+
+#ifdef __APPLE__
+#include <OpenAL/alc.h>
+#else
 #include <AL/alc.h>
+#endif
 
 #define QALC_IMP \
     QAL(LPALCCREATECONTEXT, alcCreateContext); \
@@ -88,12 +93,36 @@ void QAL_Shutdown(void)
     if (al_device)
         al_device->flags &= ~CVAR_SOUND;
 }
+
+
+const int SRATE = 48000;
+const int SSIZE = 2250;
+
+byte* buffer[4500];
+ALint sample;
+
+micsample_t HandleMic(void)
+{
+    micsample_t value;
+
+    qalcGetIntegerv(inputdevice, ALC_CAPTURE_SAMPLES, (ALCsizei)sizeof(ALint), &sample);
+    qalcCaptureSamples(inputdevice, (ALCvoid*)buffer, sample);
+
+    value.sample = sample;
+    value.buffer = buffer;
+
+    return value;
+}
+
+
 // From SacikPL
 void QALC_PrintExtensions(void)
 {
     Com_Printf("ALC_EXTENSIONS: %s\n", qalcGetString(device, ALC_EXTENSIONS));
 }
 // End From.
+
+
 
 qboolean QAL_Init(void)
 {
@@ -105,7 +134,7 @@ qboolean QAL_Init(void)
 
     Sys_LoadLibrary(al_driver->string, NULL, &handle);
     if (!handle) {
-        return qfalse;
+        return false;
     }
 
 #define QAL(type, func)  if ((q##func = Sys_GetProcAddress(handle, #func)) == NULL) goto fail;
@@ -203,10 +232,10 @@ qboolean QAL_Init(void)
         Com_Printf("HRTF preset: %s\n", qalcGetString(device, ALC_HRTF_SPECIFIER_SOFT));
     }
 
-    return qtrue;
+    return true;
 
 fail:
     QAL_Shutdown();
-    return qfalse;
+    return false;
 }
 

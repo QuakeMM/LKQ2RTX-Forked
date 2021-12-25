@@ -142,6 +142,7 @@ typedef struct ref_feedback_s {
     int         view_material_index;
 
 	vec3_t      hdr_color;
+	float       adapted_luminance;
 } ref_feedback_t;
 
 typedef struct refdef_s {
@@ -205,6 +206,7 @@ typedef enum {
     IF_SRGB         = (1 << 9),
     IF_FAKE_EMISSIVE= (1 << 10),
     IF_EXACT        = (1 << 11),
+    IF_NORMAL_MAP   = (1 << 12),
 
     // Image source indicator/requirement flags
     IF_SRC_BASE     = (0x1 << 16),
@@ -227,10 +229,10 @@ typedef enum {
 } imagetype_t;
 
 // called when the library is loaded
-extern qboolean    (*R_Init)(qboolean total);
+extern bool        (*R_Init)(bool total);
 
 // called before the library is unloaded
-extern void        (*R_Shutdown)(qboolean total);
+extern void        (*R_Shutdown)(bool total);
 
 // All data that will be used in a level should be
 // registered before rendering any frames to prevent disk hits,
@@ -248,7 +250,7 @@ extern void        (*R_Shutdown)(qboolean total);
 extern void    (*R_BeginRegistration)(const char *map);
 qhandle_t R_RegisterModel(const char *name);
 qhandle_t R_RegisterImage(const char *name, imagetype_t type,
-                          imageflags_t flags, qerror_t *err_p);
+                          imageflags_t flags, int *err_p);
 qhandle_t R_RegisterRawImage(const char *name, int width, int height, byte* pic, imagetype_t type,
                           imageflags_t flags);
 void R_UnregisterImage(qhandle_t handle);
@@ -274,7 +276,7 @@ extern void    (*R_SetScale)(float scale);
 extern void    (*R_DrawChar)(int x, int y, int flags, int ch, qhandle_t font);
 extern int     (*R_DrawString)(int x, int y, int flags, size_t maxChars,
                      const char *string, qhandle_t font);  // returns advanced x coord
-qboolean R_GetPicSize(int *w, int *h, qhandle_t pic);   // returns transparency bit
+bool R_GetPicSize(int *w, int *h, qhandle_t pic);   // returns transparency bit
 extern void    (*R_DrawPic)(int x, int y, qhandle_t pic);
 extern void    (*R_DrawStretchPic)(int x, int y, int w, int h, qhandle_t pic);
 extern void    (*R_TileClear)(int x, int y, int w, int h, qhandle_t pic);
@@ -289,7 +291,8 @@ extern void    (*R_ModeChanged)(int width, int height, int flags, int rowbytes, 
 // add decal to ring buffer
 extern void    (*R_AddDecal)(decal_t *d);
 
-extern qboolean (*R_InterceptKey)(unsigned key, qboolean down);
+extern bool    (*R_InterceptKey)(unsigned key, bool down);
+extern bool    (*R_IsHDR)();
 
 #if REF_GL
 void R_RegisterFunctionsGL();
