@@ -121,6 +121,13 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 QAL_IMP
 #undef QAL
 
-bool QAL_Init(void);
+qboolean QAL_Init(void);
 void QAL_Shutdown(void);
-void QALC_PrintExtensions(void); // From SacikPL
+void QALC_PrintExtensions(void);
+
+typedef struct micsample_s {
+    byte* buffer;
+    ALint      sample;
+} micsample_t;
+ALCdevice* inputdevice;
+micsample_t HandleMic(void);

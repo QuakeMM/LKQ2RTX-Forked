@@ -93,6 +93,28 @@ void QAL_Shutdown(void)
     if (al_device)
         al_device->flags &= ~CVAR_SOUND;
 }
+
+
+const int SRATE = 48000;
+const int SSIZE = 2250;
+
+byte* buffer[4500];
+ALint sample;
+
+micsample_t HandleMic(void)
+{
+    micsample_t value;
+
+    qalcGetIntegerv(inputdevice, ALC_CAPTURE_SAMPLES, (ALCsizei)sizeof(ALint), &sample);
+    qalcCaptureSamples(inputdevice, (ALCvoid*)buffer, sample);
+
+    value.sample = sample;
+    value.buffer = buffer;
+
+    return value;
+}
+
+
 // From SacikPL
 void QALC_PrintExtensions(void)
 {
@@ -100,7 +122,9 @@ void QALC_PrintExtensions(void)
 }
 // End From.
 
-bool QAL_Init(void)
+
+
+qboolean QAL_Init(void)
 {
     al_driver = Cvar_Get("al_driver", LIBAL, 0);
     al_device = Cvar_Get("al_device", "", 0);

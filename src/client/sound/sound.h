@@ -117,7 +117,7 @@ void DMA_Update(void);
 
 #if USE_OPENAL
 void AL_SoundInfo(void);
-bool AL_Init(void);
+qboolean AL_Init(void);
 void AL_Shutdown(void);
 sfxcache_t *AL_UploadSfx(sfx_t *s);
 void AL_DeleteSfx(sfx_t *s);
@@ -126,6 +126,7 @@ void AL_PlayChannel(channel_t *ch);
 void AL_StopAllChannels(void);
 void AL_Update(void);
 void AL_RawSamples(int samples, int rate, int width, int channels, byte *data, float volume);
+void AL_RawSamplesVoice(int samples, int rate, int width, int channels, byte* data, float volume);
 void AL_UnqueueRawSamples();
 
 /* number of buffers in flight (needed for ogg) */
@@ -170,6 +171,10 @@ extern cvar_t* s_reverb_preset_autopick;
 extern cvar_t* s_reverb;
 extern cvar_t *s_underwater;
 extern cvar_t *s_underwater_gain_hf;
+extern cvar_t* s_voiceinput;
+extern cvar_t* s_voiceinput_volume;
+
+
 // End from.
 #if USE_SNDDMA
 extern cvar_t   *s_khz;
