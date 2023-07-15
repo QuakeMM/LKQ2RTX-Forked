@@ -2,7 +2,7 @@
 
 ## Features
 
-**Quake II RTX** introduces the following features:
+**Linoleum Knife Quake II RTX** introduces the following features:
   - Muzzleflashes are back
   - Mod fixes (Gloom)
   
@@ -20,3 +20,6 @@
 ![quake002](https://user-images.githubusercontent.com/74773831/202720159-1462b156-a429-43c8-b2ab-4c869bf6da96.jpg)
 
 ![quake002](https://user-images.githubusercontent.com/74773831/202720374-2df2d440-a2f3-4aac-bc69-c71e851310dc.jpg)
+
+https://github.com/QuakeMM/LKQ2RTX-Forked/assets/74773831/dcae5ba1-3311-4cb3-a2bb-c12ed446b858
+
