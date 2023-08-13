@@ -51,6 +51,7 @@ with this program; if not, write to the Free Software Foundation, Inc.,
 #include <assert.h>
 
 cvar_t *cvar_profiler = NULL;
+cvar_t *cvar_profiler_samples = NULL;
 cvar_t *cvar_profiler_scale = NULL;
 cvar_t *cvar_hdr = NULL;
 cvar_t *cvar_vsync = NULL;
@@ -136,8 +137,8 @@ typedef enum {
 
 typedef struct VkptInit_s {
 	const char *name;
-	VkResult (*initialize)();
-	VkResult (*destroy)();
+	VkResult (*initialize)(void);
+	VkResult (*destroy)(void);
 	VkptInitFlags_t flags;
 	int is_initialized;
 } VkptInit_t;
@@ -171,8 +172,16 @@ VkptInit_t vkpt_initialization[] = {
 	{ "godraysI",   vkpt_god_rays_update_images,        vkpt_god_rays_noop,                 VKPT_INIT_SWAPCHAIN_RECREATE,  0 },
 };
 
+// Values returned by pick_surface_format_*
+typedef struct picked_surface_format_s {
+	// Swapchain surface format
+	VkSurfaceFormatKHR surface_fmt;
+	// Swapchain image view format. This will always be an *_SRGB format, while the surface format may not.
+	VkFormat swapchain_view_fmt;
+} picked_surface_format_t;
+
 void debug_output(const char* format, ...);
-static void recreate_swapchain();
+static void recreate_swapchain(void);
 
 static void viewsize_changed(cvar_t *self)
 {
@@ -211,7 +220,7 @@ static inline bool extents_equal(VkExtent2D a, VkExtent2D b)
 	return a.width == b.width && a.height == b.height;
 }
 
-static VkExtent2D get_render_extent()
+static VkExtent2D get_render_extent(void)
 {
 	int scale;
 	if(drs_effective_scale)
@@ -237,7 +246,7 @@ static VkExtent2D get_render_extent()
 	return result;
 }
 
-static VkExtent2D get_screen_image_extent()
+static VkExtent2D get_screen_image_extent(void)
 {
 	VkExtent2D result;
 	if (cvar_drs_enable->integer)
@@ -334,14 +343,14 @@ vkpt_destroy_all(VkptInitFlags_t destroy_flags)
 	if ((VKPT_INIT_DEFAULT & destroy_flags) == destroy_flags)
 	{
 		destroy_transparency();
-		vkpt_light_stats_destroy();
+		vkpt_light_buffers_destroy();
 	}
 
 	return VK_SUCCESS;
 }
 
 void
-vkpt_reload_shader()
+vkpt_reload_shader(void)
 {
 	char buf[1024];
 #ifdef _WIN32
@@ -367,7 +376,7 @@ vkpt_reload_shader()
 	vkpt_initialize_all(VKPT_INIT_RELOAD_SHADER);
 }
 
-static void vkpt_reload_textures()
+static void vkpt_reload_textures(void)
 {
 	IMG_ReloadAll();
 }
@@ -527,7 +536,7 @@ qvkDestroyDebugUtilsMessengerEXT(
 	return VK_ERROR_EXTENSION_NOT_PRESENT;
 }
 
-static bool pick_surface_format_hdr(VkSurfaceFormatKHR* format, const VkSurfaceFormatKHR avail_surface_formats[], size_t num_avail_surface_formats)
+static bool pick_surface_format_hdr(picked_surface_format_t* picked_fmt, const VkSurfaceFormatKHR avail_surface_formats[], size_t num_avail_surface_formats)
 {
 	VkSurfaceFormatKHR acceptable_formats[] = {
 		{ VK_FORMAT_R16G16B16A16_SFLOAT, VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT }
@@ -537,7 +546,8 @@ static bool pick_surface_format_hdr(VkSurfaceFormatKHR* format, const VkSurfaceF
 		for(int j = 0; j < num_avail_surface_formats; j++) {
 			if((acceptable_formats[i].format == avail_surface_formats[j].format)
 				&& (acceptable_formats[i].colorSpace == avail_surface_formats[j].colorSpace)){
-				*format = avail_surface_formats[j];
+				picked_fmt->surface_fmt = avail_surface_formats[j];
+				picked_fmt->swapchain_view_fmt = avail_surface_formats[j].format;
 				return true;
 			}
 		}
@@ -545,16 +555,23 @@ static bool pick_surface_format_hdr(VkSurfaceFormatKHR* format, const VkSurfaceF
 	return false;
 }
 
-static bool pick_surface_format_sdr(VkSurfaceFormatKHR* format, const VkSurfaceFormatKHR avail_surface_formats[], size_t num_avail_surface_formats)
+static bool pick_surface_format_sdr(picked_surface_format_t* picked_fmt, const VkSurfaceFormatKHR avail_surface_formats[], size_t num_avail_surface_formats)
 {
-	VkFormat acceptable_formats[] = {
-		VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_B8G8R8A8_SRGB,
+	struct {
+		VkFormat format;
+		VkFormat swapchain_view_fmt;
+	} acceptable_formats[] = {
+		{VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R8G8B8A8_SRGB},
+		{VK_FORMAT_B8G8R8A8_SRGB, VK_FORMAT_B8G8R8A8_SRGB},
+		{VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_R8G8B8A8_SRGB},
+		{VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_B8G8R8A8_SRGB},
 	};
 
 	for(int i = 0; i < LENGTH(acceptable_formats); i++) {
 		for(int j = 0; j < num_avail_surface_formats; j++) {
-			if(acceptable_formats[i] == avail_surface_formats[j].format) {
-				*format = avail_surface_formats[j];
+			if(acceptable_formats[i].format == avail_surface_formats[j].format) {
+				picked_fmt->surface_fmt = avail_surface_formats[j];
+				picked_fmt->swapchain_view_fmt = acceptable_formats[i].swapchain_view_fmt;
 				return true;
 			}
 		}
@@ -563,7 +580,7 @@ static bool pick_surface_format_sdr(VkSurfaceFormatKHR* format, const VkSurfaceF
 }
 
 VkResult
-create_swapchain()
+create_swapchain(void)
 {
     num_accumulated_frames = 0;
 
@@ -585,9 +602,10 @@ create_swapchain()
 		Com_Printf("  %s\n", vk_format_to_string(avail_surface_formats[i].format)); */ 
 
 
+	picked_surface_format_t picked_format;
 	bool surface_format_found = false;
 	if(cvar_hdr->integer != 0) {
-		surface_format_found = pick_surface_format_hdr(&qvk.surf_format, avail_surface_formats, num_formats);
+		surface_format_found = pick_surface_format_hdr(&picked_format, avail_surface_formats, num_formats);
 		qvk.surf_is_hdr = surface_format_found;
 		if(!surface_format_found) {
 			Com_WPrintf("HDR was requested but no supported surface format was found.\n");
@@ -598,12 +616,13 @@ create_swapchain()
 	}
 	if(!surface_format_found) {
 		// HDR disabled, or fallback to SDR
-		surface_format_found = pick_surface_format_sdr(&qvk.surf_format, avail_surface_formats, num_formats);
+		surface_format_found = pick_surface_format_sdr(&picked_format, avail_surface_formats, num_formats);
 	}
 	if(!surface_format_found) {
 		Com_EPrintf("no acceptable surface format available!\n");
 		return 1;
 	}
+	qvk.surf_format = picked_format.surface_fmt;
 
 	uint32_t num_present_modes = 0;
 	vkGetPhysicalDeviceSurfacePresentModesKHR(qvk.physical_device, qvk.surface, &num_present_modes, NULL);
@@ -682,7 +701,7 @@ create_swapchain()
 			.sType      = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
 			.image      = qvk.swap_chain_images[i],
 			.viewType   = VK_IMAGE_VIEW_TYPE_2D,
-			.format     = qvk.surf_format.format,
+			.format     = picked_format.swapchain_view_fmt,
 #if 1
 			.components = {
 				VK_COMPONENT_SWIZZLE_R,
@@ -741,7 +760,7 @@ create_swapchain()
 }
 
 VkResult
-create_command_pool_and_fences()
+create_command_pool_and_fences(void)
 {
 	VkCommandPoolCreateInfo cmd_pool_create_info = {
 		.sType            = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
@@ -801,7 +820,7 @@ append_string_list(const char** dst, uint32_t* dst_count, uint32_t dst_capacity,
 }
 
 bool
-init_vulkan()
+init_vulkan(void)
 {
 	Com_Printf("----- init_vulkan -----\n");
 
@@ -931,6 +950,8 @@ init_vulkan()
 
 	VkDeviceGroupDeviceCreateInfo device_group_create_info;
 	VkPhysicalDeviceGroupProperties device_group_info;
+	device_group_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GROUP_PROPERTIES;
+	device_group_info.pNext = NULL;
 
 	if(num_device_groups > 0) {
 		// we always use the first group
@@ -1168,12 +1189,12 @@ init_vulkan()
 		const int supports_compute = queue_families[i].queueFlags & VK_QUEUE_COMPUTE_BIT;
 		const int supports_transfer = queue_families[i].queueFlags & VK_QUEUE_TRANSFER_BIT;
 
-		if(supports_graphics && supports_compute && supports_transfer && qvk.queue_idx_graphics < 0) {
+		if(supports_graphics && supports_compute && qvk.queue_idx_graphics < 0) {
 			if(!present_support)
 				continue;
 			qvk.queue_idx_graphics = i;
 		}
-		else if(supports_transfer && qvk.queue_idx_transfer < 0) {
+		if(supports_transfer && (qvk.queue_idx_transfer < 0 || qvk.queue_idx_graphics == qvk.queue_idx_transfer)) {
 			qvk.queue_idx_transfer = i;
 		}
 	}
@@ -1290,7 +1311,7 @@ init_vulkan()
 			.shaderInt16 = qvk.supports_fp16,
 			.shaderResourceResidency = VK_FALSE,
 			.shaderResourceMinLod = VK_FALSE,
-			.sparseBinding = VK_TRUE,
+			.sparseBinding = VK_FALSE,
 			.sparseResidencyBuffer = VK_FALSE,
 			.sparseResidencyImage2D = VK_FALSE,
 			.sparseResidencyImage3D = VK_FALSE,
@@ -1468,7 +1489,7 @@ vkpt_destroy_shader_modules()
 }
 
 VkResult
-destroy_swapchain()
+destroy_swapchain(void)
 {
 	for(int i = 0; i < qvk.num_swap_chain_images; i++) {
 		vkDestroyImageView  (qvk.device, qvk.swap_chain_image_views[i], NULL);
@@ -1489,7 +1510,7 @@ destroy_swapchain()
 }
 
 int
-destroy_vulkan()
+destroy_vulkan(void)
 {
 	vkDeviceWaitIdle(qvk.device);
 
@@ -1574,7 +1595,7 @@ static pbr_material_t const * get_mesh_material(const entity_t* entity, const ma
 }
 
 static uint32_t compute_mesh_material_flags(const entity_t* entity, const model_t* model,
-	const maliasmesh_t* mesh, bool is_viewer_weapon, bool is_double_sided)
+	const maliasmesh_t* mesh, bool is_viewer_weapon, bool is_double_sided, float alpha)
 {
 	pbr_material_t const* material = get_mesh_material(entity, mesh);
 
@@ -1591,6 +1612,9 @@ static uint32_t compute_mesh_material_flags(const entity_t* entity, const model_
 
 	if (MAT_IsKind(material_id, MATERIAL_KIND_CHROME))
 		material_id = MAT_SetKind(material_id, MATERIAL_KIND_CHROME_MODEL);
+
+	if (MAT_IsKind(material_id, MATERIAL_KIND_TRANSPARENT) || (MAT_IsKind(material_id, MATERIAL_KIND_REGULAR) && (alpha < 1.0f)))
+		material_id = MAT_SetKind(material_id, MATERIAL_KIND_TRANSP_MODEL);
 
 	if (model->model_class == MCLASS_EXPLOSION)
 	{
@@ -1802,7 +1826,7 @@ static void process_bsp_entity(const entity_t* entity, int* instance_count)
 	hash.mesh = 0;
 	hash.bsp = 1;
 
-	model_entity_ids[entity_frame_num][current_instance_idx] = *(uint32_t*)&hash;
+	memcpy(&model_entity_ids[entity_frame_num][current_instance_idx], &hash, sizeof(uint32_t));
 
 	ModelInstance* mi = uniform_instance_buffer->model_instances + current_instance_idx;
 	memcpy(&mi->transform, transform, sizeof(transform));
@@ -1938,7 +1962,7 @@ static void process_regular_entity(
 			continue;
 		}
 
-		uint32_t material_id = compute_mesh_material_flags(entity, model, mesh, is_viewer_weapon, is_double_sided);
+		uint32_t material_id = compute_mesh_material_flags(entity, model, mesh, is_viewer_weapon, is_double_sided, alpha);
 
 		if (!material_id)
 			continue;
@@ -1971,7 +1995,7 @@ static void process_regular_entity(
 		hash.mesh = i;
 		hash.bsp = 0;
 
-		model_entity_ids[entity_frame_num][current_instance_index] = *(uint32_t*)&hash;
+		memcpy(&model_entity_ids[entity_frame_num][current_instance_index], &hash, sizeof(uint32_t));
 		
 		ModelInstance* mi = uniform_instance_buffer->model_instances + current_instance_index;
 
@@ -2167,7 +2191,8 @@ prepare_entities(EntityUploadInfo* upload_info)
 	model_entity_id_count[entity_frame_num] = model_instance_idx;
 	for(int i = 0; i < model_entity_id_count[entity_frame_num]; i++) {
 		for(int j = 0; j < model_entity_id_count[!entity_frame_num]; j++) {
-			entity_hash_t hash = *(entity_hash_t*)&model_entity_ids[entity_frame_num][i];
+			entity_hash_t hash;
+			memcpy(&hash, &model_entity_ids[entity_frame_num][i], sizeof(entity_hash_t));
 
 			if(model_entity_ids[entity_frame_num][i] == model_entity_ids[!entity_frame_num][j] && hash.entity != 0u) {
 				instance_buffer->model_current_to_prev[i] = j;
@@ -2373,12 +2398,12 @@ typedef struct reference_mode_s
 } reference_mode_t;
 
 static int
-get_accumulation_rendering_framenum()
+get_accumulation_rendering_framenum(void)
 {
 	return max(128, cvar_pt_accumulation_rendering_framenum->integer);
 }
 
-static bool is_accumulation_rendering_active()
+static bool is_accumulation_rendering_active(void)
 {
 	return cl_paused->integer == 2 && sv_paused->integer && cvar_pt_accumulation_rendering->integer > 0;
 }
@@ -3125,7 +3150,7 @@ static void temporal_cvar_changed(cvar_t *self)
 }
 
 static void
-recreate_swapchain()
+recreate_swapchain(void)
 {
 	vkDeviceWaitIdle(qvk.device);
 	vkpt_destroy_all(VKPT_INIT_SWAPCHAIN_RECREATE);
@@ -3149,7 +3174,7 @@ static int compare_doubles(const void* pa, const void* pb)
 
 // DRS (Dynamic Resolution Scaling) functions
 
-static void drs_init()
+static void drs_init(void)
 {
 	cvar_drs_enable = Cvar_Get("drs_enable", "0", CVAR_ARCHIVE);
 	// Target FPS value
@@ -3170,7 +3195,7 @@ static void drs_init()
 	cvar_drs_last_scale = Cvar_Get("drs_last_scale", "0", CVAR_ARCHIVE);
 }
 
-static void drs_process()
+static void drs_process(void)
 {
 #define SCALING_FRAMES 5
 	static int num_valid_frames = 0;
@@ -3542,6 +3567,7 @@ R_Init_RTX(bool total)
 	qvk.window = sdl_window;
 
 	cvar_profiler = Cvar_Get("profiler", "0", 0);
+	cvar_profiler_samples = Cvar_Get("profiler_samples", "60", CVAR_ARCHIVE);
 	cvar_profiler_scale = Cvar_Get("profiler_scale", "1", CVAR_ARCHIVE);
 	cvar_vsync = Cvar_Get("vid_vsync", "0", CVAR_ARCHIVE);
 	cvar_vsync->changed = NULL; // in case the GL renderer has set it
@@ -3987,7 +4013,7 @@ IMG_ReadPixelsHDR_RTX(int *width, int *height)
 }
 
 void
-R_SetSky_RTX(const char *name, float rotate, vec3_t axis)
+R_SetSky_RTX(const char *name, float rotate, const vec3_t axis)
 {
 	int     i;
 	char    pathname[MAX_QPATH];
@@ -4098,7 +4124,7 @@ R_BeginRegistration_RTX(const char *name)
 	bsp_world_model = bsp;
 	bsp_mesh_register_textures(bsp);
 	bsp_mesh_create_from_bsp(&vkpt_refdef.bsp_mesh_world, bsp, name);
-	vkpt_light_stats_create(&vkpt_refdef.bsp_mesh_world);
+	vkpt_light_buffers_create(&vkpt_refdef.bsp_mesh_world);
 	_VK(vkpt_vertex_buffer_upload_bsp_mesh(&vkpt_refdef.bsp_mesh_world));
 	vkpt_refdef.bsp_mesh_world_loaded = 1;
 	bsp = NULL;
@@ -4157,7 +4183,7 @@ VkCommandBuffer vkpt_begin_command_buffer(cmd_buf_group_t* group)
 			_VK(vkAllocateCommandBuffers(qvk.device, &cmd_buf_alloc_info, new_buffers + new_count * frame + group->count_per_frame));
 		}
 
-#ifdef _DEBUG
+#ifdef USE_DEBUG
 		void** new_addrs = Z_Mallocz(new_count * MAX_FRAMES_IN_FLIGHT * sizeof(void*));
 
 		if (group->count_per_frame > 0)
@@ -4188,7 +4214,7 @@ VkCommandBuffer vkpt_begin_command_buffer(cmd_buf_group_t* group)
 	_VK(vkBeginCommandBuffer(cmd_buf, &begin_info));
 
 
-#ifdef _DEBUG
+#ifdef USE_DEBUG
 	void** begin_addr = group->buffer_begin_addrs + group->count_per_frame * qvk.current_frame_index + group->used_this_frame;
 
 #if (defined __GNUC__)
@@ -4215,7 +4241,7 @@ void vkpt_free_command_buffers(cmd_buf_group_t* group)
 	Z_Free(group->buffers);
 	group->buffers = NULL;
 
-#ifdef _DEBUG
+#ifdef USE_DEBUG
 	Z_Free(group->buffer_begin_addrs);
 	group->buffer_begin_addrs = NULL;
 #endif
@@ -4228,7 +4254,7 @@ void vkpt_reset_command_buffers(cmd_buf_group_t* group)
 {
 	group->used_this_frame = 0;
 
-#ifdef _DEBUG
+#if 0 // defined(USE_DEBUG)
 	for (int i = 0; i < group->count_per_frame; i++)
 	{
 		void* addr = group->buffer_begin_addrs[group->count_per_frame * qvk.current_frame_index + i];
@@ -4289,7 +4315,7 @@ void vkpt_submit_command_buffer(
 
 	_VK(vkQueueSubmit(queue, 1, &submit_info, fence));
 
-#ifdef _DEBUG
+#ifdef USE_DEBUG
 	cmd_buf_group_t* groups[] = { &qvk.cmd_buffers_graphics, &qvk.cmd_buffers_transfer };
 	for (int ngroup = 0; ngroup < LENGTH(groups); ngroup++)
 	{
@@ -4336,7 +4362,7 @@ void debug_output(const char* format, ...)
 #endif
 }
 
-static bool R_IsHDR_RTX()
+static bool R_IsHDR_RTX(void)
 {
 	return qvk.surf_is_hdr;
 }
